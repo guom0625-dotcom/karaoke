@@ -1,0 +1,208 @@
+package com.guom.karaoke
+
+import android.content.ContentValues
+import android.content.Context
+import android.database.Cursor
+import android.database.sqlite.SQLiteDatabase
+import android.database.sqlite.SQLiteOpenHelper
+import kotlinx.serialization.Serializable
+
+/** 화이트리스트 채널. 채널을 추가하려면 여기에 등록만 하면 된다. */
+data class Channel(val id: String, val brand: String)
+
+object Channels {
+    val ALL = listOf(
+        Channel("UCZUhx8ClCv6paFW7qi3qljg", "TJ"),
+        Channel("UCDqaUIUSJP5EVMEI178Zfag", "KY"),
+    )
+
+    fun brandOf(channelId: String) = ALL.firstOrNull { it.id == channelId }?.brand ?: "?"
+}
+
+@Serializable
+data class Song(
+    val videoId: String,
+    val channelId: String,
+    val brand: String,
+    val title: String,
+    val artist: String,
+    val karaokeNo: String?,
+    val variant: String?,
+    val durationSec: Int,
+)
+
+data class SyncState(val fullDone: Boolean, val pageToken: String?)
+
+/**
+ * 곡 DB. 한국어 부분 일치·띄어쓰기 차이를 처리하기 위해 FTS 대신
+ * 정규화된 검색 키에 LIKE 를 쓴다 (채널 합계 약 10만 행 규모).
+ */
+class SongDb private constructor(context: Context) :
+    SQLiteOpenHelper(context, "songs.db", null, 1) {
+
+    init {
+        setWriteAheadLoggingEnabled(true)
+    }
+
+    override fun onCreate(db: SQLiteDatabase) {
+        db.execSQL(
+            """
+            CREATE TABLE song (
+                video_id TEXT PRIMARY KEY,
+                channel_id TEXT NOT NULL,
+                raw_title TEXT NOT NULL,
+                title TEXT NOT NULL,
+                artist TEXT NOT NULL,
+                karaoke_no TEXT,
+                variant TEXT,
+                duration_sec INTEGER NOT NULL,
+                embeddable INTEGER NOT NULL,
+                playable INTEGER NOT NULL DEFAULT 1,
+                published_at TEXT,
+                title_key TEXT NOT NULL,
+                search_key TEXT NOT NULL,
+                chosung_key TEXT NOT NULL
+            )
+            """.trimIndent()
+        )
+        db.execSQL("CREATE INDEX song_channel ON song(channel_id)")
+        db.execSQL(
+            "CREATE TABLE sync_state (channel_id TEXT PRIMARY KEY, full_done INTEGER NOT NULL, page_token TEXT)"
+        )
+    }
+
+    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+
+    /** 새 영상만 추가 (이미 있는 영상은 playable 등 상태를 보존하기 위해 무시) */
+    fun insertSongs(songs: List<NewSong>) {
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            for (s in songs) {
+                val cv = ContentValues().apply {
+                    put("video_id", s.videoId)
+                    put("channel_id", s.channelId)
+                    put("raw_title", s.rawTitle)
+                    put("title", s.parsed.title)
+                    put("artist", s.parsed.artist)
+                    put("karaoke_no", s.parsed.karaokeNo)
+                    put("variant", s.parsed.variant)
+                    put("duration_sec", s.durationSec)
+                    put("embeddable", if (s.embeddable) 1 else 0)
+                    put("published_at", s.publishedAt)
+                    put("title_key", Hangul.normalize(s.parsed.title))
+                    val key = Hangul.normalize(s.parsed.title + s.parsed.artist)
+                    put("search_key", key + (s.parsed.karaokeNo ?: ""))
+                    put("chosung_key", Hangul.chosung(key))
+                }
+                db.insertWithOnConflict("song", null, cv, SQLiteDatabase.CONFLICT_IGNORE)
+            }
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
+    }
+
+    fun knownIds(ids: List<String>): Set<String> {
+        if (ids.isEmpty()) return emptySet()
+        val placeholders = ids.joinToString(",") { "?" }
+        return readableDatabase.rawQuery(
+            "SELECT video_id FROM song WHERE video_id IN ($placeholders)", ids.toTypedArray()
+        ).use { c -> buildSet { while (c.moveToNext()) add(c.getString(0)) } }
+    }
+
+    fun search(query: String, limit: Int = 50): List<Song> {
+        val terms = query.trim().split(Regex("\\s+")).map { Hangul.normalize(it) }.filter { it.isNotEmpty() }
+        if (terms.isEmpty()) return emptyList()
+
+        // normalize 가 기호를 모두 제거하므로 LIKE 의 %, _ 는 검색어에 남지 않는다.
+        val where = StringBuilder("embeddable = 1 AND playable = 1")
+        val args = mutableListOf<String>()
+        for (t in terms) {
+            val col = if (Hangul.isChosungOnly(t)) "chosung_key" else "search_key"
+            where.append(" AND $col LIKE ?")
+            args += "%$t%"
+        }
+        val whole = terms.joinToString("")
+        args += whole
+        args += "$whole%"
+
+        return readableDatabase.rawQuery(
+            """
+            SELECT $COLUMNS FROM song WHERE $where
+            ORDER BY (title_key = ?) DESC, (title_key LIKE ?) DESC, (variant IS NULL) DESC, published_at DESC
+            LIMIT $limit
+            """.trimIndent(),
+            args.toTypedArray()
+        ).use { c -> buildList { while (c.moveToNext()) add(c.toSong()) } }
+    }
+
+    fun get(videoId: String): Song? =
+        readableDatabase.rawQuery(
+            "SELECT $COLUMNS FROM song WHERE video_id = ? AND embeddable = 1 AND playable = 1",
+            arrayOf(videoId)
+        ).use { c -> if (c.moveToFirst()) c.toSong() else null }
+
+    fun markUnplayable(videoId: String) {
+        writableDatabase.execSQL("UPDATE song SET playable = 0 WHERE video_id = ?", arrayOf(videoId))
+    }
+
+    /** 검색 가능한 곡 수 */
+    fun countPlayable(channelId: String): Int =
+        readableDatabase.rawQuery(
+            "SELECT COUNT(*) FROM song WHERE channel_id = ? AND embeddable = 1 AND playable = 1",
+            arrayOf(channelId)
+        ).use { c -> if (c.moveToFirst()) c.getInt(0) else 0 }
+
+    fun syncState(channelId: String): SyncState =
+        readableDatabase.rawQuery(
+            "SELECT full_done, page_token FROM sync_state WHERE channel_id = ?", arrayOf(channelId)
+        ).use { c ->
+            if (c.moveToFirst()) SyncState(c.getInt(0) == 1, c.getString(1)) else SyncState(false, null)
+        }
+
+    fun saveSyncState(channelId: String, state: SyncState) {
+        val cv = ContentValues().apply {
+            put("channel_id", channelId)
+            put("full_done", if (state.fullDone) 1 else 0)
+            put("page_token", state.pageToken)
+        }
+        writableDatabase.insertWithOnConflict("sync_state", null, cv, SQLiteDatabase.CONFLICT_REPLACE)
+    }
+
+    private fun Cursor.toSong(): Song {
+        val channelId = getString(1)
+        return Song(
+            videoId = getString(0),
+            channelId = channelId,
+            brand = Channels.brandOf(channelId),
+            title = getString(2),
+            artist = getString(3),
+            karaokeNo = getString(4),
+            variant = getString(5),
+            durationSec = getInt(6),
+        )
+    }
+
+    companion object {
+        private const val COLUMNS = "video_id, channel_id, title, artist, karaoke_no, variant, duration_sec"
+
+        @Volatile
+        private var instance: SongDb? = null
+
+        fun get(context: Context): SongDb =
+            instance ?: synchronized(this) {
+                instance ?: SongDb(context.applicationContext).also { instance = it }
+            }
+    }
+}
+
+data class NewSong(
+    val videoId: String,
+    val channelId: String,
+    val rawTitle: String,
+    val parsed: ParsedTitle,
+    val durationSec: Int,
+    val embeddable: Boolean,
+    val publishedAt: String?,
+)

@@ -56,6 +56,7 @@ private data class CommandMessage(val type: String = "command", val action: Stri
 
 class KaraokeServer(private val context: Context) {
     private var server: EmbeddedServer<*, *>? = null
+    private val db = SongDb.get(context)
 
     fun start() {
         if (server != null) return
@@ -80,12 +81,17 @@ class KaraokeServer(private val context: Context) {
                 call.respondAsset("web/$name")
             }
 
+            get("/api/search") {
+                val q = call.request.queryParameters["q"].orEmpty()
+                call.respond(withContext(Dispatchers.IO) { db.search(q) })
+            }
             get("/api/queue") { call.respond(QueueManager.state.value) }
             post("/api/queue") {
                 val req = call.receive<AddRequest>()
-                val item = YouTube.enqueue(req.videoId)
-                    ?: return@post call.respond(HttpStatusCode.BadRequest, "invalid videoId")
-                call.respond(item)
+                // 곡 DB(화이트리스트 채널)에 있는 재생 가능한 곡만 예약할 수 있다.
+                val song = withContext(Dispatchers.IO) { db.get(req.videoId) }
+                    ?: return@post call.respond(HttpStatusCode.NotFound, "unknown song")
+                call.respond(QueueManager.add(song))
             }
             delete("/api/queue/{id}") {
                 val id = call.parameters["id"]?.toLongOrNull()
@@ -130,8 +136,11 @@ class KaraokeServer(private val context: Context) {
             val msg = AppJson.parseToJsonElement(text).jsonObject
             val itemId = msg["itemId"]?.jsonPrimitive?.long
             when (msg["type"]?.jsonPrimitive?.content) {
-                // 에러(100/101/150 등)도 일단 다음 곡으로 넘김. 재생불가 표시는 곡 DB 도입 후.
-                "ended", "error" -> if (itemId != null) QueueManager.finish(itemId)
+                "ended" -> if (itemId != null) QueueManager.finish(itemId)
+                // 100(없음/비공개), 101·150(임베드 불가) 등: 다음 곡으로 넘기고 검색에서 제외
+                "error" -> if (itemId != null) {
+                    QueueManager.finish(itemId)?.let { db.markUnplayable(it.videoId) }
+                }
                 "skip" -> QueueManager.skip()
             }
         }

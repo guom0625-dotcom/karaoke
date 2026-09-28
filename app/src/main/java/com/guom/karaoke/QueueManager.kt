@@ -9,7 +9,15 @@ import kotlinx.serialization.Serializable
 import java.util.concurrent.atomic.AtomicLong
 
 @Serializable
-data class QueueItem(val id: Long, val videoId: String, val title: String)
+data class QueueItem(
+    val id: Long,
+    val videoId: String,
+    val title: String,
+    val artist: String,
+    val brand: String,
+    val karaokeNo: String?,
+    val variant: String?,
+)
 
 @Serializable
 data class PlayerState(
@@ -28,8 +36,11 @@ object QueueManager {
     private val _commands = MutableSharedFlow<String>(extraBufferCapacity = 16)
     val commands = _commands.asSharedFlow()
 
-    fun add(videoId: String, title: String): QueueItem {
-        val item = QueueItem(nextId.getAndIncrement(), videoId, title)
+    fun add(song: Song): QueueItem {
+        val item = QueueItem(
+            nextId.getAndIncrement(), song.videoId, song.title, song.artist,
+            song.brand, song.karaokeNo, song.variant,
+        )
         _state.update { s ->
             if (s.nowPlaying == null) s.copy(nowPlaying = item) else s.copy(queue = s.queue + item)
         }
@@ -46,9 +57,22 @@ object QueueManager {
         return removed
     }
 
-    /** 현재 곡이 itemId일 때만 다음 곡으로 넘어간다 (중복 종료 통보 방지). */
-    fun finish(itemId: Long) {
-        _state.update { s -> if (s.nowPlaying?.id == itemId) advance(s) else s }
+    /**
+     * 현재 곡이 itemId일 때만 다음 곡으로 넘어간다 (중복 종료 통보 방지).
+     * 실제로 넘어갔으면 끝난 항목을 돌려준다.
+     */
+    fun finish(itemId: Long): QueueItem? {
+        var finished: QueueItem? = null
+        _state.update { s ->
+            if (s.nowPlaying?.id == itemId) {
+                finished = s.nowPlaying
+                advance(s)
+            } else {
+                finished = null
+                s
+            }
+        }
+        return finished
     }
 
     fun skip() {

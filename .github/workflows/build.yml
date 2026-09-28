@@ -38,12 +38,12 @@ jobs:
           echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.p12"
           echo "SIGNING_KEYSTORE_PATH=$RUNNER_TEMP/release.p12" >> "$GITHUB_ENV"
 
-      - name: Build release APK
+      - name: Test and build release APK
         env:
           SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
           SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
           SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
-        run: ./gradlew --no-daemon assembleRelease -PbuildNumber=${{ github.run_number }}
+        run: ./gradlew --no-daemon testReleaseUnitTest assembleRelease -PbuildNumber=${{ github.run_number }}
 
       - name: Verify signature
         run: |

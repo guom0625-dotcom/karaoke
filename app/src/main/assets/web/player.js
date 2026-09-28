@@ -75,16 +75,18 @@ function sync() {
 }
 
 // ---- 화면 ----
+const label = (item) => `${item.title} - ${item.artist}`;
+
 function render() {
   const np = state.nowPlaying;
   $('idle').classList.toggle('hidden', !!np);
   $('now').classList.toggle('hidden', !np);
-  $('now').textContent = np ? `♪ ${np.title}` : '';
+  $('now').textContent = np ? `♪ ${label(np)}` : '';
 
   const ol = $('queue');
   ol.replaceChildren(...state.queue.slice(0, 5).map((item) => {
     const li = document.createElement('li');
-    li.textContent = item.title;
+    li.textContent = label(item);
     return li;
   }));
 }

@@ -1,0 +1,120 @@
+package com.guom.karaoke
+
+import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Build
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import java.net.HttpURLConnection
+import java.net.URL
+import java.net.URLEncoder
+import java.security.MessageDigest
+
+/**
+ * YouTube Data API v3 (API 키만 사용). 키는 안드로이드 앱 제한이 걸려 있으므로
+ * 요청마다 패키지명과 서명 인증서 SHA-1 헤더를 붙인다.
+ * search.list 는 쓰지 않는다 (호출당 100유닛).
+ */
+class YouTubeApi(
+    private val apiKey: String,
+    private val packageName: String,
+    private val certSha1: String,
+) {
+    class ApiException(val httpCode: Int, val reason: String, message: String) : Exception(message)
+
+    data class ChannelInfo(val uploadsPlaylistId: String, val videoCount: Long)
+    data class PlaylistEntry(val videoId: String, val title: String, val description: String, val publishedAt: String?)
+    data class PlaylistPage(val items: List<PlaylistEntry>, val nextPageToken: String?)
+    data class VideoDetails(val durationSec: Int, val embeddable: Boolean)
+
+    /** 이번 실행에서 쓴 할당량 (목록 호출은 모두 1유닛) */
+    var unitsUsed = 0
+        private set
+
+    fun channel(channelId: String): ChannelInfo {
+        val item = get("channels", mapOf("part" to "contentDetails,statistics", "id" to channelId))
+            .arr("items").firstOrNull()?.jsonObject
+            ?: throw ApiException(404, "channelNotFound", "채널을 찾을 수 없음: $channelId")
+        return ChannelInfo(
+            uploadsPlaylistId = item.obj("contentDetails").obj("relatedPlaylists").str("uploads")!!,
+            videoCount = item.obj("statistics").str("videoCount")?.toLongOrNull() ?: 0,
+        )
+    }
+
+    fun playlistItems(playlistId: String, pageToken: String?): PlaylistPage {
+        val params = mutableMapOf("part" to "snippet", "playlistId" to playlistId, "maxResults" to "50")
+        if (pageToken != null) params["pageToken"] = pageToken
+        val res = get("playlistItems", params)
+        val items = res.arr("items").mapNotNull { el ->
+            val snippet = el.jsonObject.obj("snippet")
+            val videoId = snippet.obj("resourceId").str("videoId") ?: return@mapNotNull null
+            PlaylistEntry(
+                videoId = videoId,
+                title = snippet.str("title").orEmpty(),
+                description = snippet.str("description").orEmpty(),
+                publishedAt = snippet.str("publishedAt"),
+            )
+        }
+        return PlaylistPage(items, res.str("nextPageToken"))
+    }
+
+    fun videos(ids: List<String>): Map<String, VideoDetails> {
+        if (ids.isEmpty()) return emptyMap()
+        return get("videos", mapOf("part" to "contentDetails,status", "id" to ids.joinToString(","), "maxResults" to "50"))
+            .arr("items").associate { el ->
+                val v = el.jsonObject
+                v.str("id")!! to VideoDetails(
+                    durationSec = parseIsoDuration(v.obj("contentDetails").str("duration").orEmpty()),
+                    embeddable = v.obj("status")["embeddable"]?.jsonPrimitive?.content == "true",
+                )
+            }
+    }
+
+    private fun get(resource: String, params: Map<String, String>): JsonObject {
+        val query = (params + ("key" to apiKey)).entries.joinToString("&") { (k, v) ->
+            "$k=${URLEncoder.encode(v, "UTF-8")}"
+        }
+        val conn = URL("https://www.googleapis.com/youtube/v3/$resource?$query").openConnection() as HttpURLConnection
+        conn.connectTimeout = 15_000
+        conn.readTimeout = 15_000
+        conn.setRequestProperty("X-Android-Package", packageName)
+        conn.setRequestProperty("X-Android-Cert", certSha1)
+        try {
+            val code = conn.responseCode
+            unitsUsed++
+            val stream = if (code in 200..299) conn.inputStream else conn.errorStream
+            val body = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+            if (code !in 200..299) {
+                val err = runCatching { AppJson.parseToJsonElement(body).jsonObject.obj("error") }.getOrNull()
+                val reason = err?.arr("errors")?.firstOrNull()?.jsonObject?.str("reason") ?: "http$code"
+                throw ApiException(code, reason, err?.str("message") ?: "HTTP $code")
+            }
+            return AppJson.parseToJsonElement(body).jsonObject
+        } finally {
+            conn.disconnect()
+        }
+    }
+
+    companion object {
+        /** API 키의 안드로이드 앱 제한에 쓰이는 서명 인증서 SHA-1 (대문자 hex, 구분자 없음) */
+        fun signingCertSha1(context: Context): String {
+            val pm = context.packageManager
+            val cert = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                pm.getPackageInfo(context.packageName, PackageManager.GET_SIGNING_CERTIFICATES)
+                    .signingInfo!!.apkContentsSigners[0]
+            } else {
+                @Suppress("DEPRECATION")
+                pm.getPackageInfo(context.packageName, PackageManager.GET_SIGNATURES).signatures!![0]
+            }
+            return MessageDigest.getInstance("SHA-1").digest(cert.toByteArray())
+                .joinToString("") { "%02X".format(it) }
+        }
+    }
+}
+
+private fun JsonObject.obj(key: String): JsonObject = this[key]?.jsonObject ?: JsonObject(emptyMap())
+private fun JsonObject.arr(key: String): JsonArray = this[key]?.jsonArray ?: JsonArray(emptyList())
+private fun JsonObject.str(key: String): String? = this[key]?.jsonPrimitive?.content
