@@ -221,7 +221,10 @@ class KaraokeServer(private val context: Context) {
                     QueueManager.finish(itemId)?.let { item ->
                         val marked = code != null && code in UNPLAYABLE_CODES
                         if (marked) db.markUnplayable(item.videoId)
-                        PlaybackLog.add("${item.title} - ${item.artist} · 오류 $code${if (marked) " (검색에서 제외)" else ""}")
+                        PlaybackLog.add(
+                            "${item.title} - ${item.artist} · 오류 $code${if (marked) " (검색에서 제외)" else ""}",
+                            item.videoId,
+                        )
                     }
                 }
                 "progress" -> if (itemId != null) QueueManager.reportProgress(
@@ -271,11 +274,13 @@ class KaraokeServer(private val context: Context) {
 
 /** 최근 재생 오류 (호스트 화면에서 원인 확인용) */
 object PlaybackLog {
-    private val _entries = kotlinx.coroutines.flow.MutableStateFlow<List<String>>(emptyList())
+    data class Entry(val text: String, val videoId: String)
+
+    private val _entries = kotlinx.coroutines.flow.MutableStateFlow<List<Entry>>(emptyList())
     val entries = _entries.asStateFlow()
 
-    fun add(text: String) {
+    fun add(text: String, videoId: String) {
         val time = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.KOREA).format(java.util.Date())
-        _entries.update { (listOf("$time $text") + it).take(10) }
+        _entries.update { (listOf(Entry("$time $text", videoId)) + it).take(10) }
     }
 }

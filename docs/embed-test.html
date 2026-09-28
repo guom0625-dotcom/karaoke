@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="strict-origin-when-cross-origin">
+  <title>임베드 테스트</title>
+  <style>
+    body { margin: 0; padding: 16px; background: #111; color: #eee; font-family: system-ui, sans-serif; }
+    #wrap { position: relative; width: 100%; aspect-ratio: 16 / 9; background: #000; }
+    #player { position: absolute; inset: 0; width: 100%; height: 100%; }
+    .row { display: flex; gap: 8px; margin: 12px 0; }
+    input { flex: 1; padding: 10px; font-size: 16px; border-radius: 8px; border: 1px solid #444; background: #000; color: #eee; }
+    button { padding: 10px 14px; font-size: 16px; border-radius: 8px; border: 0; background: #fc3; }
+    #log { white-space: pre-wrap; font-size: 14px; color: #bbb; }
+    .bad { color: #ff7b7b; } .good { color: #7bff9b; }
+  </style>
+</head>
+<body>
+  <h3>유튜브 임베드 테스트 (https 주소)</h3>
+  <p>차량 노래방 플레이어(127.0.0.1)에서 오류 150이 난 영상이 여기서는 재생되는지 확인하는 페이지예요.</p>
+  <div class="row">
+    <input id="vid" placeholder="영상 ID 또는 유튜브 링크">
+    <button id="go">재생</button>
+  </div>
+  <div id="wrap"><div id="player"></div></div>
+  <div id="result"></div>
+  <div id="log"></div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const log = (s) => { $('log').textContent = `${new Date().toLocaleTimeString()} ${s}\n` + $('log').textContent; };
+    const parseId = (s) => {
+      s = (s || '').trim();
+      if (/^[A-Za-z0-9_-]{11}$/.test(s)) return s;
+      const m = s.match(/(?:[?&]v=|youtu\.be\/|\/shorts\/|\/embed\/)([A-Za-z0-9_-]{11})/);
+      return m ? m[1] : null;
+    };
+    let player = null;
+    const initial = parseId(new URLSearchParams(location.search).get('v'));
+    if (initial) $('vid').value = initial;
+    log(`페이지 주소(origin): ${location.origin}`);
+
+    function onYouTubeIframeAPIReady() {
+      player = new YT.Player('player', {
+        width: '100%', height: '100%',
+        playerVars: { playsinline: 1, rel: 0, origin: location.origin },
+        events: {
+          onReady: () => { log('플레이어 준비됨. 재생 버튼을 누르세요'); },
+          onStateChange: (e) => {
+            const names = { '-1': '시작 전', 0: '종료', 1: '재생 중', 2: '일시정지', 3: '버퍼링', 5: '대기' };
+            log(`상태: ${names[e.data] ?? e.data}`);
+            if (e.data === 1) $('result').innerHTML = '<h2 class="good">✅ 재생됨 — https 에서는 재생 가능</h2>';
+          },
+          onError: (e) => {
+            log(`오류 ${e.data}`);
+            $('result').innerHTML = `<h2 class="bad">❌ 오류 ${e.data} — https 에서도 재생 불가</h2>`;
+          },
+        },
+      });
+    }
+    $('go').addEventListener('click', () => {
+      const id = parseId($('vid').value);
+      if (!id) return log('영상 ID를 찾을 수 없어요');
+      $('result').textContent = '';
+      log(`불러오는 중: ${id}`);
+      player.loadVideoById(id);
+    });
+  </script>
+  <script src="https://www.youtube.com/iframe_api"></script>
+</body>
+</html>

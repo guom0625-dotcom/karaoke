@@ -61,7 +61,7 @@ class MainActivity : Activity() {
         val updateButton = Button(this)
         val nowPlayingView = TextView(this).apply { textSize = 15f }
         val queueList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        val errorLog = TextView(this).apply { textSize = 13f }
+        val errorLog = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         resetButton = Button(this)
         val brandButton = Button(this)
         fun showBrand() {
@@ -214,7 +214,16 @@ class MainActivity : Activity() {
         }
         scope.launch {
             PlaybackLog.entries.collect { list ->
-                errorLog.text = if (list.isEmpty()) "최근 오류 없음" else list.joinToString("\n")
+                errorLog.removeAllViews()
+                if (list.isEmpty()) errorLog.addView(TextView(this@MainActivity).apply { text = "최근 오류 없음" })
+                for (e in list) {
+                    errorLog.addView(TextView(this@MainActivity).apply {
+                        text = "${e.text}\n  ↳ 눌러서 https 테스트 페이지에서 열기"
+                        textSize = 13f
+                        setPadding(0, pad / 4, 0, pad / 4)
+                        setOnClickListener { openInChrome("$EMBED_TEST_URL?v=${e.videoId}", newTab = true) }
+                    })
+                }
                 refreshUnplayable()
             }
         }
@@ -354,4 +363,9 @@ class MainActivity : Activity() {
     }
 
     private fun toast(msg: String) = Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+
+    companion object {
+        /** 오류 150 원인 확인용: 같은 영상을 https 주소에서 임베드해 본다 (GitHub Pages, docs/embed-test.html) */
+        private const val EMBED_TEST_URL = "https://guom0625-dotcom.github.io/karaoke/embed-test.html"
+    }
 }
