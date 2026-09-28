@@ -35,10 +35,16 @@ class MainActivity : Activity() {
         val info = packageManager.getPackageInfo(packageName, 0)
         val pad = (16 * resources.displayMetrics.density).toInt()
 
+        // 호스트 화면이 차 화면에 미러링될 수 있으므로 키는 가리고, 저장 후엔 끝 4자리만 보여준다.
+        val apiKeyStatus = TextView(this)
+        fun showSavedKey() {
+            val key = Settings.apiKey(this)
+            apiKeyStatus.text = if (key.isNullOrBlank()) "저장된 API 키 없음" else "저장된 키: ••••${key.takeLast(4)}"
+        }
+        showSavedKey()
         val apiKeyInput = EditText(this).apply {
-            hint = "YouTube Data API 키"
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
-            setText(Settings.apiKey(context).orEmpty())
+            hint = "YouTube Data API 키 (새로 입력 시에만)"
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
         }
         val syncButton = Button(this)
         val syncStatus = TextView(this)
@@ -92,11 +98,16 @@ class MainActivity : Activity() {
             })
 
             addView(section("곡 DB"))
+            addView(apiKeyStatus)
             addView(apiKeyInput)
             addView(Button(context).apply {
                 text = "API 키 저장"
                 setOnClickListener {
-                    Settings.setApiKey(context, apiKeyInput.text.toString())
+                    val key = apiKeyInput.text.toString().trim()
+                    if (key.isEmpty()) return@setOnClickListener toast("키를 입력하세요")
+                    Settings.setApiKey(context, key)
+                    apiKeyInput.setText("")
+                    showSavedKey()
                     toast("저장했어요")
                 }
             })
