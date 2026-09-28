@@ -26,7 +26,15 @@ class YouTubeApi(
     class ApiException(val httpCode: Int, val reason: String, message: String) : Exception(message)
 
     data class ChannelInfo(val uploadsPlaylistId: String, val videoCount: Long)
-    data class PlaylistEntry(val videoId: String, val title: String, val description: String, val publishedAt: String?)
+    data class PlaylistEntry(
+        val videoId: String,
+        val title: String,
+        val description: String,
+        val publishedAt: String?,
+        /** 영상을 올린 채널. 채널 재생목록에는 다른 채널 영상이 섞일 수 있다. */
+        val ownerChannelId: String?,
+    )
+    data class PlaylistInfo(val id: String, val title: String, val itemCount: Long)
     data class PlaylistPage(val items: List<PlaylistEntry>, val nextPageToken: String?)
     data class VideoDetails(val durationSec: Int, val embeddable: Boolean)
 
@@ -56,9 +64,31 @@ class YouTubeApi(
                 title = snippet.str("title").orEmpty(),
                 description = snippet.str("description").orEmpty(),
                 publishedAt = snippet.str("publishedAt"),
+                ownerChannelId = snippet.str("videoOwnerChannelId"),
             )
         }
         return PlaylistPage(items, res.str("nextPageToken"))
+    }
+
+    /** 채널이 직접 만든 공개 재생목록 전체 (50개당 1유닛) */
+    fun channelPlaylists(channelId: String): List<PlaylistInfo> {
+        val result = mutableListOf<PlaylistInfo>()
+        var token: String? = null
+        do {
+            val params = mutableMapOf("part" to "snippet,contentDetails", "channelId" to channelId, "maxResults" to "50")
+            if (token != null) params["pageToken"] = token
+            val res = get("playlists", params)
+            for (el in res.arr("items")) {
+                val p = el.jsonObject
+                result += PlaylistInfo(
+                    id = p.str("id") ?: continue,
+                    title = p.obj("snippet").str("title").orEmpty(),
+                    itemCount = p.obj("contentDetails").str("itemCount")?.toLongOrNull() ?: 0,
+                )
+            }
+            token = res.str("nextPageToken")
+        } while (token != null)
+        return result
     }
 
     fun videos(ids: List<String>): Map<String, VideoDetails> {

@@ -85,8 +85,12 @@ class SongDb private constructor(context: Context) :
         )
     }
 
-    /** 새 영상만 추가 (이미 있는 영상은 playable 등 상태를 보존하기 위해 무시) */
-    fun insertSongs(songs: List<NewSong>) {
+    /**
+     * 새 영상만 추가 (이미 있는 영상은 playable 등 상태를 보존하기 위해 무시).
+     * 새로 추가된 검색 가능 곡 수를 돌려준다.
+     */
+    fun insertSongs(songs: List<NewSong>): Int {
+        var added = 0
         val db = writableDatabase
         db.beginTransaction()
         try {
@@ -107,12 +111,14 @@ class SongDb private constructor(context: Context) :
                     put("search_key", key + (s.parsed.karaokeNo ?: ""))
                     put("chosung_key", Hangul.chosung(key))
                 }
-                db.insertWithOnConflict("song", null, cv, SQLiteDatabase.CONFLICT_IGNORE)
+                val row = db.insertWithOnConflict("song", null, cv, SQLiteDatabase.CONFLICT_IGNORE)
+                if (row != -1L && s.embeddable) added++
             }
             db.setTransactionSuccessful()
         } finally {
             db.endTransaction()
         }
+        return added
     }
 
     fun knownIds(ids: List<String>): Set<String> {
