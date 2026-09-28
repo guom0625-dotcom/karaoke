@@ -2,6 +2,7 @@ package com.guom.karaoke
 
 import android.Manifest
 import android.app.Activity
+import android.app.AlertDialog
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -54,6 +55,8 @@ class MainActivity : Activity() {
             imeOptions = EditorInfo.IME_ACTION_SEARCH
         }
         val results = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val updateStatus = TextView(this)
+        val updateButton = Button(this)
         val queueView = TextView(this).apply { textSize = 15f }
 
         fun section(title: String) = TextView(this).apply {
@@ -92,6 +95,8 @@ class MainActivity : Activity() {
                 text = "${getString(R.string.app_name)} v${info.versionName}"
             })
             addView(TextView(context).apply { text = "서버: $PLAYER_URL" })
+            addView(updateStatus)
+            addView(updateButton.apply { setOnClickListener { onUpdateButton() } })
             addView(Button(context).apply {
                 text = "크롬에서 플레이어 열기"
                 setOnClickListener { openPlayerInChrome() }
@@ -145,6 +150,24 @@ class MainActivity : Activity() {
             }
         }
         scope.launch {
+            Updater.state.collect { s ->
+                updateStatus.text = when (s) {
+                    Updater.State.Idle, Updater.State.UpToDate -> "최신 버전이에요"
+                    Updater.State.Checking -> "업데이트 확인 중…"
+                    is Updater.State.Available -> "새 버전 v${s.release.versionName}이 있어요\n" +
+                        s.release.notes.lines().filter { it.isNotBlank() }.take(8).joinToString("\n")
+                    is Updater.State.Downloading -> "v${s.release.versionName} 받는 중… ${s.percent}%"
+                    Updater.State.WaitingForUser -> "설치 확인 화면에서 '업데이트'를 누르세요"
+                    is Updater.State.Failed -> s.message
+                }
+                updateButton.text = if (s is Updater.State.Available) "업데이트" else "업데이트 확인"
+                updateButton.isEnabled = s !is Updater.State.Checking && s !is Updater.State.Downloading
+            }
+        }
+        // 앱 실행 시 1회 확인 (GitHub 비인증 API 한도: 시간당 60회)
+        if (Updater.state.value == Updater.State.Idle) scope.launch { Updater.check(this@MainActivity) }
+
+        scope.launch {
             QueueManager.state.collect { s ->
                 queueView.text = buildString {
                     append("▶ 재생 중: ").append(s.nowPlaying?.let { "${it.title} - ${it.artist}" } ?: "없음")
@@ -158,6 +181,40 @@ class MainActivity : Activity() {
     override fun onDestroy() {
         scope.cancel()
         super.onDestroy()
+    }
+
+    private fun onUpdateButton() {
+        val s = Updater.state.value
+        if (s !is Updater.State.Available) {
+            scope.launch { Updater.check(this@MainActivity) }
+            return
+        }
+        // 최초 1회: "출처를 알 수 없는 앱 설치" 허용 화면으로 안내
+        if (!packageManager.canRequestPackageInstalls()) {
+            toast("이 앱의 '출처를 알 수 없는 앱 설치'를 허용한 뒤 다시 눌러 주세요")
+            startActivity(
+                Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName"))
+            )
+            return
+        }
+        // 설치하면 앱이 재시작되어 서버·예약 목록·동기화가 끊긴다
+        val q = QueueManager.state.value
+        val busy = buildList {
+            if (q.nowPlaying != null) add("재생 중인 곡")
+            if (q.queue.isNotEmpty()) add("예약 ${q.queue.size}곡")
+            if (SyncManager.isRunning()) add("진행 중인 동기화")
+        }
+        val start = { scope.launch { Updater.downloadAndInstall(this@MainActivity, s.release) }; Unit }
+        if (busy.isEmpty()) {
+            start()
+        } else {
+            AlertDialog.Builder(this)
+                .setTitle("지금 업데이트할까요?")
+                .setMessage("업데이트하면 앱이 다시 시작되어 ${busy.joinToString(", ")}이(가) 끊겨요. (동기화는 나중에 이어서 진행돼요)")
+                .setPositiveButton("업데이트") { _, _ -> start() }
+                .setNegativeButton("나중에", null)
+                .show()
+        }
     }
 
     private fun Song.label() = buildString {
