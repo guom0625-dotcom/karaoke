@@ -162,6 +162,20 @@ class SongDb private constructor(context: Context) :
             arrayOf(videoId)
         ).use { c -> if (c.moveToFirst()) c.toSong() else null }
 
+    /** 재생 불가로 표시된 곡인지 (예약 실패 이유 안내용) */
+    fun isMarkedUnplayable(videoId: String): Boolean =
+        readableDatabase.rawQuery("SELECT playable FROM song WHERE video_id = ?", arrayOf(videoId))
+            .use { c -> c.moveToFirst() && c.getInt(0) == 0 }
+
+    fun countUnplayable(): Int =
+        readableDatabase.rawQuery("SELECT COUNT(*) FROM song WHERE playable = 0", null)
+            .use { c -> if (c.moveToFirst()) c.getInt(0) else 0 }
+
+    /** 재생 오류로 표시된 곡을 모두 되살린다 (테스트 중 잘못 표시된 경우 등) */
+    fun resetUnplayable() {
+        writableDatabase.execSQL("UPDATE song SET playable = 1 WHERE playable = 0")
+    }
+
     fun markUnplayable(videoId: String) {
         writableDatabase.execSQL("UPDATE song SET playable = 0 WHERE video_id = ?", arrayOf(videoId))
     }

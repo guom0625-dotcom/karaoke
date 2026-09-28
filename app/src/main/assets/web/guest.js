@@ -52,6 +52,10 @@ function handleError(e, forbiddenMsg) {
   if (e.status === 403 && e.text === 'room') { showBlocked(); return; }
   if (e.status === 403) { toast(forbiddenMsg || '권한이 없어요'); return; }
   if (e.status === 404) { toast('이미 끝났거나 없는 곡이에요'); return; }
+  if (e.status === 409) {
+    toast(e.text === 'unplayable' ? '재생 오류가 났던 곡이라 예약할 수 없어요 (호스트가 초기화 가능)' : '곡 정보를 찾을 수 없어요');
+    return;
+  }
   toast('연결에 문제가 있어요. 잠시 후 다시 시도해 주세요');
 }
 

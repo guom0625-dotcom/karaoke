@@ -6,6 +6,8 @@ let player = null;
 let playerReady = false;
 let started = false;        // 첫 탭(자동재생 정책) 이후 true
 let loadedItemId = null;    // 현재 플레이어에 로드된 큐 항목 id
+let playedItemId = null;    // 실제로 PLAYING 까지 간 항목 id (가짜 ENDED 무시용)
+let retryOnVisible = false; // 백그라운드 탭에서 난 오류는 건너뛰지 않고 돌아왔을 때 다시 시도
 let state = { nowPlaying: null, queue: [] };
 let ws = null;
 
@@ -78,16 +80,27 @@ function onYouTubeIframeAPIReady() {
     events: {
       onReady: () => { playerReady = true; sync(); },
       onStateChange: (e) => {
+        if (e.data === YT.PlayerState.PLAYING) playedItemId = loadedItemId;
         if (e.data === YT.PlayerState.ENDED && loadedItemId !== null) {
-          send({ type: 'ended', itemId: loadedItemId });
+          // 로드 중에 튀는 ENDED 로 곡이 바로 넘어가지 않도록, 실제 재생된 곡만 종료 처리
+          if (playedItemId === loadedItemId) send({ type: 'ended', itemId: loadedItemId });
+          else notice('재생이 시작되지 않았어요. 화면을 탭하거나 스킵하세요');
         } else {
           reportProgress();
         }
       },
       onError: (e) => {
-        // 100: 없음/비공개, 101·150: 임베드 불가, 2·5·153 등 → 자동 스킵
+        const np = state.nowPlaying;
         console.warn('player error', e.data, loadedItemId);
-        if (loadedItemId !== null) send({ type: 'error', itemId: loadedItemId, code: e.data });
+        if (loadedItemId === null) return;
+        if (document.hidden) {
+          // 크롬은 백그라운드 탭 재생을 막을 수 있다 → 영상 문제로 보지 않고 돌아오면 재시도
+          retryOnVisible = true;
+          return;
+        }
+        // 100: 없음/비공개, 101·150: 퍼가기 불가, 2·5·153 등 기타 → 다음 곡으로
+        notice(`재생할 수 없어요 (오류 ${e.data})${np ? ' · ' + label(np) : ''} → 다음 곡`);
+        send({ type: 'error', itemId: loadedItemId, code: e.data });
       },
     },
   });
@@ -134,5 +147,20 @@ $('start').addEventListener('click', () => {
 });
 
 $('skip').addEventListener('click', () => send({ type: 'skip' }));
+
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden || !retryOnVisible || !playerReady) return;
+  retryOnVisible = false;
+  const np = state.nowPlaying;
+  if (np && np.id === loadedItemId) player.loadVideoById(np.videoId);
+});
+
+let noticeTimer = null;
+function notice(msg) {
+  $('notice').textContent = msg;
+  $('notice').classList.remove('hidden');
+  clearTimeout(noticeTimer);
+  noticeTimer = setTimeout(() => $('notice').classList.add('hidden'), 6000);
+}
 
 connect();

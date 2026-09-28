@@ -27,6 +27,8 @@ import io.ktor.server.websocket.webSocket
 import io.ktor.websocket.Frame
 import io.ktor.websocket.readText
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
@@ -138,8 +140,12 @@ class KaraokeServer(private val context: Context) {
                 val actor = call.actor() ?: return@post call.respond(HttpStatusCode.Unauthorized)
                 val req = call.receive<AddRequest>()
                 // 곡 DB(화이트리스트 채널)에 있는 재생 가능한 곡만 예약할 수 있다.
+                // 같은 곡을 여러 번 예약하는 것은 허용한다.
                 val song = withContext(Dispatchers.IO) { db.get(req.videoId) }
-                    ?: return@post call.respond(HttpStatusCode.NotFound, "unknown song")
+                if (song == null) {
+                    val unplayable = withContext(Dispatchers.IO) { db.isMarkedUnplayable(req.videoId) }
+                    return@post call.respond(HttpStatusCode.Conflict, if (unplayable) "unplayable" else "unknown song")
+                }
                 call.respond(QueueManager.add(song, actor))
             }
             delete("/api/queue/{id}") {
@@ -208,9 +214,15 @@ class KaraokeServer(private val context: Context) {
             val itemId = msg["itemId"]?.jsonPrimitive?.long
             when (msg["type"]?.jsonPrimitive?.content) {
                 "ended" -> if (itemId != null) QueueManager.finish(itemId)
-                // 100(없음/비공개), 101·150(임베드 불가) 등: 다음 곡으로 넘기고 검색에서 제외
+                // 다음 곡으로 넘긴다. 영상 자체 문제(100 없음/비공개, 101·150 퍼가기 불가)만
+                // 재생 불가로 표시해 검색에서 뺀다. 2·5·153 등은 일시적·환경 문제일 수 있어 표시하지 않는다.
                 "error" -> if (itemId != null) {
-                    QueueManager.finish(itemId)?.let { db.markUnplayable(it.videoId) }
+                    val code = msg["code"]?.jsonPrimitive?.content?.toIntOrNull()
+                    QueueManager.finish(itemId)?.let { item ->
+                        val marked = code != null && code in UNPLAYABLE_CODES
+                        if (marked) db.markUnplayable(item.videoId)
+                        PlaybackLog.add("${item.title} - ${item.artist} · 오류 $code${if (marked) " (검색에서 제외)" else ""}")
+                    }
                 }
                 "progress" -> if (itemId != null) QueueManager.reportProgress(
                     Progress(
@@ -253,5 +265,17 @@ class KaraokeServer(private val context: Context) {
     companion object {
         const val PORT = 8080
         private val SAFE_NAME = Regex("^[A-Za-z0-9._-]+$")
+        private val UNPLAYABLE_CODES = setOf(100, 101, 150)
+    }
+}
+
+/** 최근 재생 오류 (호스트 화면에서 원인 확인용) */
+object PlaybackLog {
+    private val _entries = kotlinx.coroutines.flow.MutableStateFlow<List<String>>(emptyList())
+    val entries = _entries.asStateFlow()
+
+    fun add(text: String) {
+        val time = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.KOREA).format(java.util.Date())
+        _entries.update { (listOf("$time $text") + it).take(10) }
     }
 }

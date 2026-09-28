@@ -61,6 +61,8 @@ class MainActivity : Activity() {
         val updateButton = Button(this)
         val nowPlayingView = TextView(this).apply { textSize = 15f }
         val queueList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val errorLog = TextView(this).apply { textSize = 13f }
+        resetButton = Button(this)
         val brandButton = Button(this)
         fun showBrand() {
             brandButton.text = "같은 곡이면 기본 브랜드: ${Settings.preferredBrand(this)} (눌러서 변경)"
@@ -166,6 +168,18 @@ class MainActivity : Activity() {
             })
             addView(results)
 
+            addView(section("재생 오류"))
+            addView(errorLog)
+            addView(resetButton.apply {
+                setOnClickListener {
+                    scope.launch {
+                        withContext(Dispatchers.IO) { db.resetUnplayable() }
+                        refreshUnplayable()
+                        toast("재생 불가 표시를 모두 풀었어요")
+                    }
+                }
+            })
+
             addView(section("예약 현황 (눌러서 순서 변경·삭제)"))
             addView(Button(context).apply {
                 text = "다음 곡으로 스킵"
@@ -198,6 +212,12 @@ class MainActivity : Activity() {
                 updateButton.isEnabled = s !is Updater.State.Checking && s !is Updater.State.Downloading
             }
         }
+        scope.launch {
+            PlaybackLog.entries.collect { list ->
+                errorLog.text = if (list.isEmpty()) "최근 오류 없음" else list.joinToString("\n")
+                refreshUnplayable()
+            }
+        }
         // 앱 실행 시 1회 확인 (GitHub 비인증 API 한도: 시간당 60회)
         if (Updater.state.value == Updater.State.Idle) scope.launch { Updater.check(this@MainActivity) }
 
@@ -222,6 +242,14 @@ class MainActivity : Activity() {
     override fun onDestroy() {
         scope.cancel()
         super.onDestroy()
+    }
+
+    private lateinit var resetButton: Button
+
+    private suspend fun refreshUnplayable() {
+        val n = withContext(Dispatchers.IO) { db.countUnplayable() }
+        resetButton.text = "재생 불가 표시 초기화 (${n}곡)"
+        resetButton.isEnabled = n > 0
     }
 
     private fun reserve(song: Song) {
