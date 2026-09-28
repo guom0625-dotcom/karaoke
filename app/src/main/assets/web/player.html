@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="strict-origin-when-cross-origin">
+  <title>차량 노래방</title>
+  <link rel="stylesheet" href="/static/player.css">
+</head>
+<body>
+  <div id="player"></div>
+
+  <div id="idle" class="idle">예약된 곡이 없습니다</div>
+
+  <div id="now" class="now hidden"></div>
+
+  <div class="upnext">
+    <div class="upnext-title">다음 곡</div>
+    <ol id="queue"></ol>
+  </div>
+
+  <div class="controls">
+    <span id="conn" class="conn off" title="서버 연결"></span>
+    <button id="skip">스킵 ⏭</button>
+  </div>
+
+  <div id="start" class="start">
+    <div>화면을 탭해서 시작</div>
+    <small>소리 있는 재생을 위해 처음 한 번 필요해요</small>
+  </div>
+
+  <script src="/static/player.js"></script>
+  <script src="https://www.youtube.com/iframe_api"></script>
+</body>
+</html>
