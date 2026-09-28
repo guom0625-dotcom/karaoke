@@ -274,6 +274,15 @@ async function cancel(item) {
 
 // ---- 검색 ----
 let searchSeq = 0;
+let searchField = 'all'; // all | title | artist
+
+$('field').addEventListener('click', (ev) => {
+  const btn = ev.target.closest('button');
+  if (!btn) return;
+  searchField = btn.dataset.field;
+  for (const b of $('field').children) b.classList.toggle('on', b === btn);
+  search();
+});
 let searchTimer = null;
 
 $('q').addEventListener('input', () => {
@@ -289,7 +298,7 @@ async function search() {
   const seq = ++searchSeq;
   if (!q) { $('results').replaceChildren(); return; }
   try {
-    const groups = await api('GET', `/api/search?q=${encodeURIComponent(q)}`);
+    const groups = await api('GET', `/api/search?q=${encodeURIComponent(q)}&field=${searchField}`);
     if (seq !== searchSeq) return; // 더 최근 검색이 있음
     renderResults(groups);
   } catch (e) {

@@ -37,6 +37,7 @@ function connect() {
     if (msg.type === 'state') {
       state = msg;
       render();
+      renderPanel();
       sync();
     } else if (msg.type === 'command' && playerReady) {
       runCommand(msg);
@@ -172,3 +173,143 @@ function notice(msg) {
 }
 
 connect();
+
+// ---- 호스트 패널: 검색·예약, 예약 목록 관리, 재생 제어 (호스트 토큰으로 요청) ----
+const fmt = (sec) => {
+  sec = Math.max(0, Math.floor(sec || 0));
+  return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
+};
+const versionLabel = (s) =>
+  `${s.brand}${s.karaokeNo ? ' ' + s.karaokeNo : ''} · ${s.variant || '기본 반주'} · ${fmt(s.durationSec)}`;
+
+function el(tag, props = {}, ...children) {
+  const node = Object.assign(document.createElement(tag), props);
+  node.append(...children.filter((c) => c != null));
+  return node;
+}
+
+async function hostApi(method, path, body) {
+  const headers = { 'X-Host': hostToken || '' };
+  if (body) headers['Content-Type'] = 'application/json';
+  const res = await fetch(path, { method, headers, body: body ? JSON.stringify(body) : undefined });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw Object.assign(new Error(`HTTP ${res.status}`), { status: res.status, text });
+  }
+  return res.status === 204 ? null : res.json();
+}
+
+function hostError(e) {
+  if (e.status === 401 || e.status === 403) notice('호스트 인증이 없어요. 호스트 앱에서 플레이어를 다시 열어 주세요');
+  else if (e.status === 409) notice('재생 오류가 났던 곡이라 예약할 수 없어요');
+  else notice('요청에 실패했어요');
+}
+
+let panelOpen = false;
+function setPanel(open) {
+  panelOpen = open;
+  $('panel').classList.toggle('hidden', !open);
+  $('upnext').classList.toggle('hidden', open);
+  if (open) {
+    renderPanel();
+    setTimeout(() => $('pq').focus(), 50);
+  }
+}
+$('openPanel').addEventListener('click', () => setPanel(true));
+$('closePanel').addEventListener('click', () => setPanel(false));
+
+// 재생 제어
+$('panel').querySelector('.panel-ctrl').addEventListener('click', async (ev) => {
+  const btn = ev.target.closest('button');
+  if (!btn) return;
+  let act = btn.dataset.act;
+  if (btn.id === 'pPlay' && playerReady) {
+    act = player.getPlayerState() === YT.PlayerState.PLAYING ? 'pause' : 'play';
+  }
+  const qs = btn.dataset.sec ? `?seconds=${btn.dataset.sec}` : '';
+  try { await hostApi('POST', `/api/player/${act}${qs}`); } catch (e) { hostError(e); }
+  setTimeout(renderPanelCtrl, 400);
+});
+
+function renderPanelCtrl() {
+  const playing = playerReady && player.getPlayerState && player.getPlayerState() === YT.PlayerState.PLAYING;
+  $('pPlay').textContent = playing ? '⏸' : '▶';
+}
+
+// 검색
+let pSeq = 0;
+let pField = 'all'; // all | title | artist
+$('pField').addEventListener('click', (ev) => {
+  const btn = ev.target.closest('button');
+  if (!btn) return;
+  pField = btn.dataset.field;
+  for (const b of $('pField').children) b.classList.toggle('on', b === btn);
+  panelSearch();
+});
+let pTimer = null;
+$('pq').addEventListener('input', () => { clearTimeout(pTimer); pTimer = setTimeout(panelSearch, 300); });
+$('pq').addEventListener('keydown', (ev) => {
+  if (ev.key === 'Enter') { clearTimeout(pTimer); panelSearch(); $('pq').blur(); }
+});
+
+async function panelSearch() {
+  const q = $('pq').value.trim();
+  const seq = ++pSeq;
+  if (!q) { $('pResults').replaceChildren(); return; }
+  try {
+    const groups = await hostApi('GET', `/api/search?q=${encodeURIComponent(q)}&field=${pField}`);
+    if (seq !== pSeq) return;
+    if (!groups.length) {
+      $('pResults').replaceChildren(el('li', { className: 'muted', textContent: '검색 결과가 없어요' }));
+      return;
+    }
+    $('pResults').replaceChildren(...groups.map((g) => {
+      const def = g.versions[0];
+      const versions = el('div', { className: 'versions', hidden: true },
+        ...g.versions.map((v) => el('button', { textContent: `＋ ${versionLabel(v)}`, onclick: () => reserve(v) })));
+      return el('li', {},
+        el('div', { className: 'row' },
+          el('button', { className: 'main', onclick: () => reserve(def) },
+            el('div', { className: 't', textContent: `${g.title} - ${g.artist}` }),
+            el('div', { className: 's', textContent: versionLabel(def) })),
+          g.versions.length > 1
+            ? el('button', { className: 'small', textContent: `버전 ${g.versions.length}`, onclick: () => { versions.hidden = !versions.hidden; } })
+            : null),
+        g.versions.length > 1 ? versions : null);
+    }));
+  } catch (e) {
+    hostError(e);
+  }
+}
+
+async function reserve(song) {
+  try {
+    await hostApi('POST', '/api/queue', { videoId: song.videoId });
+    notice(`예약: ${song.title}`);
+  } catch (e) {
+    hostError(e);
+  }
+}
+
+// 예약 목록 관리 (호스트: 모든 곡 순서 변경·삭제)
+function renderPanel() {
+  if (!panelOpen) return;
+  renderPanelCtrl();
+  const items = state.queue.map((item, i) => el('li', {},
+    el('div', { className: 'row' },
+      el('div', { className: 'main' },
+        el('div', { className: 't', textContent: `${i + 1}. ${label(item)}` }),
+        el('div', { className: 's', textContent: `${item.nickname} · ${item.brand} ${item.variant || '기본'} · ${fmt(item.durationSec)}` })),
+      el('button', { className: 'small', textContent: '▲', onclick: () => move(item, -1) }),
+      el('button', { className: 'small', textContent: '▼', onclick: () => move(item, 1) }),
+      el('button', { className: 'small', textContent: '✕', onclick: () => removeItem(item) }))));
+  $('pQueue').replaceChildren(...(items.length ? items : [el('li', { className: 'muted', textContent: '대기 중인 곡이 없어요' })]));
+}
+
+async function move(item, delta) {
+  try { await hostApi('POST', `/api/queue/${item.id}/move?delta=${delta}`); } catch (e) { hostError(e); }
+}
+
+async function removeItem(item) {
+  try { await hostApi('DELETE', `/api/queue/${item.id}`); } catch (e) { hostError(e); }
+}

@@ -14,15 +14,37 @@
 
   <div id="now" class="now hidden"></div>
 
-  <div class="upnext">
+  <div id="upnext" class="upnext">
     <div class="upnext-title">다음 곡</div>
     <ol id="queue"></ol>
   </div>
 
   <div class="controls">
     <span id="conn" class="conn off" title="서버 연결"></span>
+    <button id="openPanel">🔍 예약</button>
     <button id="skip">스킵 ⏭</button>
   </div>
+
+  <!-- 호스트 패널: 혼자 쓸 때도 차 화면에서 바로 검색·예약·관리 (영상은 뒤에서 계속 재생) -->
+  <aside id="panel" class="panel hidden">
+    <div class="panel-head">
+      <span class="panel-title">예약 · 관리</span>
+      <button id="closePanel" class="icon">✕</button>
+    </div>
+    <div class="panel-ctrl">
+      <button data-act="pause" id="pPlay">⏸</button>
+      <button data-act="seekBy" data-sec="10">+10초</button>
+      <button data-act="seekBy" data-sec="30">+30초</button>
+      <button data-act="skip">스킵</button>
+    </div>
+    <input id="pq" class="panel-search" type="search" placeholder="곡명, 가수, 번호, 초성" autocomplete="off" enterkeyhint="search">
+    <div class="seg" id="pField"><button data-field="all" class="on">전체</button><button data-field="title">제목</button><button data-field="artist">가수</button></div>
+    <div class="panel-body">
+      <ul id="pResults" class="plist"></ul>
+      <div class="panel-sub">예약 목록</div>
+      <ol id="pQueue" class="plist"></ol>
+    </div>
+  </aside>
 
   <div id="notice" class="notice hidden"></div>
 

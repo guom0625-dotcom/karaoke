@@ -32,6 +32,21 @@ data class Song(
 )
 
 /** 재생목록 하나의 동기화 진행 상태. completedAt 은 마지막으로 끝까지 훑은 시각(ms). */
+/** 검색 대상: 전체(제목+가수+번호) / 제목만 / 가수만 */
+enum class SearchField(val column: String, val chosungColumn: String) {
+    ALL("search_key", "chosung_key"),
+    TITLE("title_key", "title_chosung"),
+    ARTIST("artist_key", "artist_chosung");
+
+    companion object {
+        fun parse(value: String?) = when (value) {
+            "title" -> TITLE
+            "artist" -> ARTIST
+            else -> ALL
+        }
+    }
+}
+
 data class SyncState(val fullDone: Boolean, val pageToken: String?, val completedAt: Long = 0)
 
 /**
@@ -39,7 +54,7 @@ data class SyncState(val fullDone: Boolean, val pageToken: String?, val complete
  * 정규화된 검색 키에 LIKE 를 쓴다 (채널 합계 약 10만 행 규모).
  */
 class SongDb private constructor(context: Context) :
-    SQLiteOpenHelper(context, "songs.db", null, 2) {
+    SQLiteOpenHelper(context, "songs.db", null, 3) {
 
     init {
         setWriteAheadLoggingEnabled(true)
@@ -62,7 +77,10 @@ class SongDb private constructor(context: Context) :
                 published_at TEXT,
                 title_key TEXT NOT NULL,
                 search_key TEXT NOT NULL,
-                chosung_key TEXT NOT NULL
+                chosung_key TEXT NOT NULL,
+                artist_key TEXT NOT NULL DEFAULT '',
+                title_chosung TEXT NOT NULL DEFAULT '',
+                artist_chosung TEXT NOT NULL DEFAULT ''
             )
             """.trimIndent()
         )
@@ -76,6 +94,26 @@ class SongDb private constructor(context: Context) :
             // 파서 개선으로 새로 인식되는 영상을 다시 훑는다.
             db.execSQL("DROP TABLE IF EXISTS sync_state")
             createSyncState(db)
+        }
+        if (oldVersion < 3) {
+            // v3: 제목·가수 따로 검색 → 가수 키와 제목/가수별 초성 키를 추가하고 기존 곡에 채운다.
+            db.execSQL("ALTER TABLE song ADD COLUMN artist_key TEXT NOT NULL DEFAULT ''")
+            db.execSQL("ALTER TABLE song ADD COLUMN title_chosung TEXT NOT NULL DEFAULT ''")
+            db.execSQL("ALTER TABLE song ADD COLUMN artist_chosung TEXT NOT NULL DEFAULT ''")
+            val rows = db.rawQuery("SELECT video_id, title, artist FROM song", null).use { c ->
+                buildList { while (c.moveToNext()) add(Triple(c.getString(0), c.getString(1), c.getString(2))) }
+            }
+            val update = db.compileStatement(
+                "UPDATE song SET artist_key = ?, title_chosung = ?, artist_chosung = ? WHERE video_id = ?"
+            )
+            for ((id, title, artist) in rows) {
+                val artistKey = Hangul.normalize(artist)
+                update.bindString(1, artistKey)
+                update.bindString(2, Hangul.chosung(Hangul.normalize(title)))
+                update.bindString(3, Hangul.chosung(artistKey))
+                update.bindString(4, id)
+                update.executeUpdateDelete()
+            }
         }
     }
 
@@ -110,6 +148,10 @@ class SongDb private constructor(context: Context) :
                     val key = Hangul.normalize(s.parsed.title + s.parsed.artist)
                     put("search_key", key + (s.parsed.karaokeNo ?: ""))
                     put("chosung_key", Hangul.chosung(key))
+                    val artistKey = Hangul.normalize(s.parsed.artist)
+                    put("artist_key", artistKey)
+                    put("title_chosung", Hangul.chosung(Hangul.normalize(s.parsed.title)))
+                    put("artist_chosung", Hangul.chosung(artistKey))
                 }
                 val row = db.insertWithOnConflict("song", null, cv, SQLiteDatabase.CONFLICT_IGNORE)
                 if (row != -1L && s.embeddable) added++
@@ -130,7 +172,7 @@ class SongDb private constructor(context: Context) :
     }
 
     /** 곡 단위로 묶기 전 원본 결과라 넉넉히 가져온다 (버전·브랜드별 중복 포함). */
-    fun search(query: String, channels: List<Channel>, limit: Int = 300): List<Song> {
+    fun search(query: String, channels: List<Channel>, field: SearchField = SearchField.ALL, limit: Int = 300): List<Song> {
         val terms = query.trim().split(Regex("\\s+")).map { Hangul.normalize(it) }.filter { it.isNotEmpty() }
         if (terms.isEmpty() || channels.isEmpty()) return emptyList()
 
@@ -140,7 +182,7 @@ class SongDb private constructor(context: Context) :
         where.append(" AND channel_id IN (${channels.joinToString(",") { "?" }})")
         args += channels.map { it.id }
         for (t in terms) {
-            val col = if (Hangul.isChosungOnly(t)) "chosung_key" else "search_key"
+            val col = if (Hangul.isChosungOnly(t)) field.chosungColumn else field.column
             where.append(" AND $col LIKE ?")
             args += "%$t%"
         }

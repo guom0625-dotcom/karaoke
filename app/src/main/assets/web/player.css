@@ -43,6 +43,39 @@ html, body {
 .conn { width: 1.6vh; height: 1.6vh; border-radius: 50%; background: #3c3; }
 .conn.off { background: #d33; }
 
+/* ---- 호스트 패널 (차 화면 터치용: 큼직하게) ---- */
+.panel {
+  position: fixed; top: 0; right: 0; bottom: 0; width: min(46vw, 640px); min-width: 320px;
+  display: flex; flex-direction: column; gap: 1.2vh; padding: 2vh 1.6vw;
+  background: rgba(16, 18, 24, .94); z-index: 8;
+  font-size: clamp(15px, 2.4vh, 26px);
+}
+.panel button { font: inherit; color: #fff; border: 0; border-radius: 1vh; background: #2b2f3a; }
+.panel-head { display: flex; align-items: center; }
+.panel-title { flex: 1; font-weight: 700; color: #ffd24d; }
+.panel .icon { padding: .6em .9em; }
+.panel-ctrl { display: grid; grid-template-columns: repeat(4, 1fr); gap: .5em; }
+.panel-ctrl button { padding: .7em 0; }
+.panel-search {
+  width: 100%; padding: .7em .8em; font: inherit; border-radius: 1vh;
+  border: 1px solid #444; background: #000; color: #fff;
+}
+.seg { display: grid; grid-template-columns: repeat(3, 1fr); gap: .5em; }
+.panel .seg button { padding: .45em 0; background: none; border: 1px solid #444; color: #aaa; }
+.panel .seg button.on { background: #2b2f3a; color: #fff; font-weight: 700; }
+.panel-body { flex: 1; overflow-y: auto; }
+.panel-sub { margin: 1.4vh 0 .4vh; color: #aaa; font-size: .85em; }
+.plist { list-style: none; margin: 0; padding: 0; }
+.plist li { border-top: 1px solid #2b2f3a; }
+.plist .row { display: flex; align-items: center; gap: .5em; padding: .55em 0; }
+.plist .main { flex: 1; min-width: 0; text-align: left; background: none !important; padding: 0; }
+.plist .t { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.plist .s { font-size: .78em; color: #aaa; margin-top: .15em; }
+.plist .small { flex: none; padding: .45em .7em; font-size: .85em; }
+.plist .versions button { display: block; width: 100%; text-align: left; margin: .3em 0 .3em 1em;
+  padding: .5em .7em; font-size: .85em; background: #1f222b; }
+.plist .muted { color: #888; padding: .6em 0; border: 0; }
+
 .notice {
   position: fixed; left: 50%; top: 40%; transform: translateX(-50%); max-width: 80vw;
   padding: 1.5vh 2vw; border-radius: 1vh; background: rgba(0, 0, 0, .8);

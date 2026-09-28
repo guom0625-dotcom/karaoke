@@ -57,6 +57,16 @@ class MainActivity : Activity() {
             imeOptions = EditorInfo.IME_ACTION_SEARCH
         }
         val results = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        var searchField = SearchField.ALL
+        val fieldButton = Button(this)
+        fun showField() {
+            fieldButton.text = "검색 대상: " + when (searchField) {
+                SearchField.ALL -> "전체"
+                SearchField.TITLE -> "제목"
+                SearchField.ARTIST -> "가수"
+            } + " (눌러서 변경)"
+        }
+        showField()
         val updateStatus = TextView(this)
         val updateButton = Button(this)
         val nowPlayingView = TextView(this).apply { textSize = 15f }
@@ -79,7 +89,7 @@ class MainActivity : Activity() {
             val q = searchInput.text.toString()
             scope.launch {
                 val brand = Settings.preferredBrand(this@MainActivity)
-                val groups = withContext(Dispatchers.IO) { SongGrouping.group(db.search(q, Settings.enabledChannels(this@MainActivity)), brand) }
+                val groups = withContext(Dispatchers.IO) { SongGrouping.group(db.search(q, Settings.enabledChannels(this@MainActivity), searchField), brand) }
                 results.removeAllViews()
                 if (groups.isEmpty()) {
                     results.addView(TextView(this@MainActivity).apply { text = "결과 없음" })
@@ -177,6 +187,13 @@ class MainActivity : Activity() {
                     }
                 })
             }
+            addView(fieldButton.apply {
+                setOnClickListener {
+                    searchField = SearchField.entries[(searchField.ordinal + 1) % SearchField.entries.size]
+                    showField()
+                    if (searchInput.text.isNotBlank()) runSearch()
+                }
+            })
             addView(searchInput.apply {
                 setOnEditorActionListener { _, _, _ -> runSearch(); true }
             })

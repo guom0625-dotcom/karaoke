@@ -131,7 +131,8 @@ class KaraokeServer(private val context: Context) {
                 if (!call.roomOk()) return@get call.respond(HttpStatusCode.Forbidden, "room")
                 val q = call.request.queryParameters["q"].orEmpty()
                 val brand = Settings.preferredBrand(context)
-                call.respond(withContext(Dispatchers.IO) { SongGrouping.group(db.search(q, Settings.enabledChannels(context)), brand) })
+                val field = SearchField.parse(call.request.queryParameters["field"])
+                call.respond(withContext(Dispatchers.IO) { SongGrouping.group(db.search(q, Settings.enabledChannels(context), field), brand) })
             }
 
             // ---- 예약 큐 ----
