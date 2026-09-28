@@ -59,6 +59,31 @@ class TitleParserTest {
     }
 
     @Test
+    fun olderTitleFormats() {
+        val tj = TitleParser.parse("[TJ노래방] 좋니 - 윤종신 / TJ Karaoke / 1000만뷰")!!
+        assertEquals("좋니", tj.title)
+        assertEquals("윤종신", tj.artist)
+        assertNull(tj.variant)
+
+        val ky = TitleParser.parse("안동역에서 - 진성 (KY.87706) / Karaoke")!!
+        assertEquals("안동역에서", ky.title)
+        assertEquals("진성", ky.artist)
+        assertEquals("87706", ky.karaokeNo)
+        assertNull(ky.variant)
+
+        val noBracket = TitleParser.parse("남자라는 이유로 - 조항조 (KY.5282) / KY Karaoke")!!
+        assertEquals("남자라는 이유로", noBracket.title)
+        assertEquals("5282", noBracket.karaokeNo)
+
+        val jp = TitleParser.parse(
+            "베텔게우스 (베텔기우스) (드라마\"슈퍼 리치\") - 유리 (ベテルギウス (ドラマ\"SUPER RICH\") - 優里) (KY.44746) / KY KARAOKE"
+        )!!
+        assertEquals("베텔게우스 (베텔기우스) (드라마\"슈퍼 리치\")", jp.title)
+        assertEquals("유리 (ベテルギウス (ドラマ\"SUPER RICH\") - 優里)", jp.artist)
+        assertEquals("44746", jp.karaokeNo)
+    }
+
+    @Test
     fun nonKaraokeTitlesRejected() {
         assertNull(TitleParser.parse("TJ노래방 공식 유튜브채널 신곡 소개"))
         assertNull(TitleParser.parse("Deleted video"))

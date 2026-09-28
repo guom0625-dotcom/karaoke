@@ -31,14 +31,15 @@ data class Song(
     val durationSec: Int,
 )
 
-data class SyncState(val fullDone: Boolean, val pageToken: String?)
+/** 재생목록 하나의 동기화 진행 상태. completedAt 은 마지막으로 끝까지 훑은 시각(ms). */
+data class SyncState(val fullDone: Boolean, val pageToken: String?, val completedAt: Long = 0)
 
 /**
  * 곡 DB. 한국어 부분 일치·띄어쓰기 차이를 처리하기 위해 FTS 대신
  * 정규화된 검색 키에 LIKE 를 쓴다 (채널 합계 약 10만 행 규모).
  */
 class SongDb private constructor(context: Context) :
-    SQLiteOpenHelper(context, "songs.db", null, 1) {
+    SQLiteOpenHelper(context, "songs.db", null, 2) {
 
     init {
         setWriteAheadLoggingEnabled(true)
@@ -66,12 +67,23 @@ class SongDb private constructor(context: Context) :
             """.trimIndent()
         )
         db.execSQL("CREATE INDEX song_channel ON song(channel_id)")
-        db.execSQL(
-            "CREATE TABLE sync_state (channel_id TEXT PRIMARY KEY, full_done INTEGER NOT NULL, page_token TEXT)"
-        )
+        createSyncState(db)
     }
 
-    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+        if (oldVersion < 2) {
+            // v1: 채널 단위 상태 → v2: 재생목록 단위. 곡은 유지하고 동기화 상태만 초기화해
+            // 파서 개선으로 새로 인식되는 영상을 다시 훑는다.
+            db.execSQL("DROP TABLE IF EXISTS sync_state")
+            createSyncState(db)
+        }
+    }
+
+    private fun createSyncState(db: SQLiteDatabase) {
+        db.execSQL(
+            "CREATE TABLE sync_state (playlist_id TEXT PRIMARY KEY, full_done INTEGER NOT NULL, page_token TEXT, completed_at INTEGER NOT NULL DEFAULT 0)"
+        )
+    }
 
     /** 새 영상만 추가 (이미 있는 영상은 playable 등 상태를 보존하기 위해 무시) */
     fun insertSongs(songs: List<NewSong>) {
@@ -154,18 +166,19 @@ class SongDb private constructor(context: Context) :
             arrayOf(channelId)
         ).use { c -> if (c.moveToFirst()) c.getInt(0) else 0 }
 
-    fun syncState(channelId: String): SyncState =
+    fun syncState(playlistId: String): SyncState =
         readableDatabase.rawQuery(
-            "SELECT full_done, page_token FROM sync_state WHERE channel_id = ?", arrayOf(channelId)
+            "SELECT full_done, page_token, completed_at FROM sync_state WHERE playlist_id = ?", arrayOf(playlistId)
         ).use { c ->
-            if (c.moveToFirst()) SyncState(c.getInt(0) == 1, c.getString(1)) else SyncState(false, null)
+            if (c.moveToFirst()) SyncState(c.getInt(0) == 1, c.getString(1), c.getLong(2)) else SyncState(false, null)
         }
 
-    fun saveSyncState(channelId: String, state: SyncState) {
+    fun saveSyncState(playlistId: String, state: SyncState) {
         val cv = ContentValues().apply {
-            put("channel_id", channelId)
+            put("playlist_id", playlistId)
             put("full_done", if (state.fullDone) 1 else 0)
             put("page_token", state.pageToken)
+            put("completed_at", state.completedAt)
         }
         writableDatabase.insertWithOnConflict("sync_state", null, cv, SQLiteDatabase.CONFLICT_REPLACE)
     }

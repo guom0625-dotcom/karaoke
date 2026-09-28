@@ -12,10 +12,11 @@ data class ParsedTitle(
  * 노래방 채널 영상 제목 파서. 형식이 맞지 않으면(홍보 영상 등) null.
  *  TJ: "[TJ노래방 / 여자키] 곡명 - 가수 / TJ Karaoke"   (번호는 설명란 "곡번호.328")
  *  KY: "[멜로디제거] 곡명 - 가수 (KY.84784) / KY KARAOKE"
+ * 오래된 영상은 "/ TJ Karaoke / 1000만뷰", "(KY.87706) / Karaoke" 처럼 조금씩 다르다.
  */
 object TitleParser {
     private val BRACKET = Regex("^\\[([^\\]]*)]\\s*")
-    private val SUFFIX = Regex("\\s*/\\s*(TJ|KY)\\s*Karaoke\\s*$", RegexOption.IGNORE_CASE)
+    private val SUFFIX = Regex("\\s*/\\s*(?:TJ|KY)?\\s*Karaoke(?:\\s*/.*)?$", RegexOption.IGNORE_CASE)
     private val KY_NO = Regex("\\s*\\(KY\\.(\\d+)\\)\\s*$")
     private val DESC_NO = Regex("곡번호\\.?\\s*(\\d+)")
 
