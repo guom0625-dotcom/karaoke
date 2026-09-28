@@ -200,6 +200,14 @@ object Settings {
         prefs(context).edit().putBoolean("brand_enabled_$brand", enabled).apply()
     }
 
+    /** 핫스팟 이름·비밀번호: 일반 앱은 시스템에서 읽을 수 없어 호스트가 한 번 입력한다 (와이파이 QR 용) */
+    fun hotspotSsid(context: Context): String = prefs(context).getString("hotspot_ssid", "") ?: ""
+    fun hotspotPassword(context: Context): String = prefs(context).getString("hotspot_password", "") ?: ""
+
+    fun setHotspot(context: Context, ssid: String, password: String) {
+        prefs(context).edit().putString("hotspot_ssid", ssid).putString("hotspot_password", password).apply()
+    }
+
     fun enabledChannels(context: Context): List<Channel> =
         Channels.ALL.filter { isBrandEnabled(context, it.brand) }
 

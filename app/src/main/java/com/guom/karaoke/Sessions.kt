@@ -39,9 +39,21 @@ object Sessions {
             hostToken = prefs.getString("host_token", null) ?: newToken().also {
                 prefs.edit().putString("host_token", it).apply()
             }
-            roomToken = newToken(6)
+            // 방 토큰은 고정 (핫스팟 비밀번호를 아는 사람만 접속 가능). 호스트가 원할 때만 초기화.
+            roomToken = prefs.getString("room_token", null) ?: newToken(6).also {
+                prefs.edit().putString("room_token", it).apply()
+            }
             initialized = true
         }
+    }
+
+    /** 동승자 주소 초기화: 기존 QR·주소와 동승자 세션을 모두 무효로 만든다 */
+    fun resetRoom(context: Context) {
+        init(context)
+        roomToken = newToken(6)
+        context.applicationContext.getSharedPreferences("settings", Context.MODE_PRIVATE)
+            .edit().putString("room_token", roomToken).apply()
+        bySecret.clear()
     }
 
     fun create(nickname: String): GuestSession {

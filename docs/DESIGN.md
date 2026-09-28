@@ -93,7 +93,11 @@
 - QR 1: 핫스팟 접속용 와이파이 QR (`WIFI:T:WPA;S:<SSID>;P:<PW>;;`)
   - 일반 앱은 핫스팟 SSID/비밀번호를 읽을 수 없으므로 설정 화면에서 1회 입력받아 저장
 - QR 2: 동승자 페이지 주소 `http://<핫스팟IP>:<PORT>/guest?room=<토큰>`
-  - 방 토큰은 세션마다 새로 발급 (간단한 접근 제어)
+  - 방 토큰은 **고정** (앱에 저장, 호스트 앱 "동승자 주소 초기화"로만 변경) — 루틴으로 매번 켜고 꺼도 주소 유지. 핫스팟 비밀번호를 알아야 접속 가능하므로 위험 낮음 (결정)
+  - 핫스팟 IP는 바뀔 수 있어 플레이어 화면 QR은 30초마다 현재 IP로 갱신 (`/api/join-info`, `/qr/guest.svg`, `/qr/wifi.svg`, 호스트 토큰 필요)
+  - 대기 중엔 QR 크게(화면 아래 가운데), 노래 중엔 왼쪽 위 작게. 호스트 패널에서 숨기기 가능
+  - 앱 재시작으로 세션이 사라지면 동승자 페이지가 저장된 닉네임으로 자동 재접속
+  - QR 생성: ZXing core → SVG
 
 ## 5. 데이터 모델
 - **Song** (SQLite): videoId(PK), channelId, rawTitle, title, artist, karaokeNo, variant, durationSec, embeddable, playable, publishedAt, 검색 키

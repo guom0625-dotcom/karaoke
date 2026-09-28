@@ -12,6 +12,12 @@
 
   <div id="idle" class="idle">예약된 곡이 없습니다</div>
 
+  <!-- 동승자 접속 QR: 대기 중엔 크게, 노래 중엔 왼쪽 위에 작게 -->
+  <div id="join" class="join hidden">
+    <figure id="wifiBox"><img id="qrWifi" alt=""><figcaption>① 와이파이 <b id="ssid"></b></figcaption></figure>
+    <figure><img id="qrGuest" alt=""><figcaption>② 노래 예약</figcaption></figure>
+  </div>
+
   <div id="now" class="now hidden"></div>
 
   <div id="upnext" class="upnext">
@@ -37,6 +43,7 @@
       <button data-act="seekBy" data-sec="30">+30초</button>
       <button data-act="skip">스킵</button>
     </div>
+    <button id="toggleQr" class="wide">QR 숨기기</button>
     <input id="pq" class="panel-search" type="search" placeholder="곡명, 가수, 번호, 초성" autocomplete="off" enterkeyhint="search">
     <div class="seg" id="pField"><button data-field="all" class="on">전체</button><button data-field="title">제목</button><button data-field="artist">가수</button></div>
     <div class="panel-body">

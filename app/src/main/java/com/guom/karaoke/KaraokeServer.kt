@@ -65,6 +65,9 @@ private data class StateMessage(
 )
 
 @Serializable
+private data class JoinInfo(val guestUrl: String?, val ssid: String)
+
+@Serializable
 private data class ProgressMessage(val type: String = "progress", val progress: Progress?)
 
 @Serializable
@@ -101,6 +104,24 @@ class KaraokeServer(private val context: Context) {
                 val name = call.parameters["name"].orEmpty()
                 if (!SAFE_NAME.matches(name)) return@get call.respond(HttpStatusCode.NotFound)
                 call.respondAsset("web/$name")
+            }
+
+            // ---- 접속 안내 (플레이어 화면 QR): 호스트만. <img> 는 헤더를 못 붙여 ?host= 로도 받는다 ----
+            get("/api/join-info") {
+                if (!call.isHostRequest()) return@get call.respond(HttpStatusCode.Forbidden)
+                call.respond(joinInfo())
+            }
+            get("/qr/{kind}") {
+                if (!call.isHostRequest()) return@get call.respond(HttpStatusCode.Forbidden)
+                val info = joinInfo()
+                val text = when (call.parameters["kind"]) {
+                    "guest.svg" -> info.guestUrl
+                    "wifi.svg" -> if (info.ssid.isEmpty()) null
+                        else QrCodes.wifiPayload(info.ssid, Settings.hotspotPassword(context))
+                    else -> null
+                } ?: return@get call.respond(HttpStatusCode.NotFound)
+                call.response.header("Cache-Control", "no-cache")
+                call.respondBytes(QrCodes.svg(text).toByteArray(), ContentType.Image.SVG)
             }
 
             // ---- 동승자 세션 ----
@@ -260,6 +281,18 @@ class KaraokeServer(private val context: Context) {
             PlaybackLog.add("$what → 대체 버전 없음, 다음 곡으로", current.videoId)
         }
     }
+
+    /** 현재 핫스팟 IP 기준 동승자 주소. IP 는 핫스팟을 켤 때마다 바뀔 수 있어 매번 계산한다. */
+    private fun joinInfo(): JoinInfo {
+        val ip = Network.candidates().firstOrNull()?.ip
+        return JoinInfo(
+            guestUrl = ip?.let { "http://$it:$PORT/guest?room=${Sessions.roomToken}" },
+            ssid = Settings.hotspotSsid(context),
+        )
+    }
+
+    private fun RoutingCall.isHostRequest() =
+        (request.headers["X-Host"] ?: request.queryParameters["host"]) == Sessions.hostToken
 
     private fun RoutingCall.actor(): Actor? {
         if (request.headers["X-Host"] == Sessions.hostToken) return Actor.Host

@@ -38,6 +38,7 @@ function connect() {
       state = msg;
       render();
       renderPanel();
+      renderJoin();
       sync();
     } else if (msg.type === 'command' && playerReady) {
       runCommand(msg);
@@ -313,3 +314,44 @@ async function move(item, delta) {
 async function removeItem(item) {
   try { await hostApi('DELETE', `/api/queue/${item.id}`); } catch (e) { hostError(e); }
 }
+
+
+// ---- 동승자 접속 QR (현재 핫스팟 IP 기준, 주기적으로 갱신) ----
+const QR_KEY = 'karaoke.showQr';
+let showQr = true;
+try { showQr = localStorage.getItem(QR_KEY) !== '0'; } catch (e) { /* 기본값 */ }
+let joinInfo = null;
+
+async function refreshJoin() {
+  if (!hostToken) return;
+  try {
+    joinInfo = await hostApi('GET', '/api/join-info');
+    const t = Date.now(); // IP 가 바뀌면 QR 도 바뀌므로 캐시 방지
+    const q = `host=${encodeURIComponent(hostToken)}&t=${t}`;
+    if (joinInfo.guestUrl) $('qrGuest').src = `/qr/guest.svg?${q}`;
+    $('wifiBox').hidden = !joinInfo.ssid;
+    if (joinInfo.ssid) {
+      $('qrWifi').src = `/qr/wifi.svg?${q}`;
+      $('ssid').textContent = joinInfo.ssid;
+    }
+  } catch (e) {
+    joinInfo = null;
+  }
+  renderJoin();
+}
+
+function renderJoin() {
+  const visible = showQr && joinInfo && joinInfo.guestUrl;
+  $('join').classList.toggle('hidden', !visible);
+  $('join').classList.toggle('big', !state.nowPlaying); // 대기 중엔 크게
+  $('toggleQr').textContent = showQr ? 'QR 숨기기' : 'QR 보이기';
+}
+
+$('toggleQr').addEventListener('click', () => {
+  showQr = !showQr;
+  try { localStorage.setItem(QR_KEY, showQr ? '1' : '0'); } catch (e) { /* 저장 불가 */ }
+  renderJoin();
+});
+
+refreshJoin();
+setInterval(refreshJoin, 30000);

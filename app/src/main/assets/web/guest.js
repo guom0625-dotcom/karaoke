@@ -48,7 +48,11 @@ async function api(method, path, body) {
 }
 
 function handleError(e, forbiddenMsg) {
-  if (e.status === 401) { me = null; askNickname(); return; }
+  if (e.status === 401) {
+    me = null;
+    autoRejoin().then((m) => { if (m) { me = m; start(); toast('다시 연결했어요. 한 번 더 눌러 주세요'); } else askNickname(); });
+    return;
+  }
   if (e.status === 403 && e.text === 'room') { showBlocked(); return; }
   if (e.status === 403) { toast(forbiddenMsg || '권한이 없어요'); return; }
   if (e.status === 404) { toast('이미 끝났거나 없는 곡이에요'); return; }
@@ -65,7 +69,21 @@ async function init() {
   if (store.secret) {
     try { me = await api('GET', '/api/me'); } catch (e) { me = null; }
   }
+  if (!me && store.nickname) me = await autoRejoin();
   if (me) start(); else askNickname();
+}
+
+/** 앱이 재시작돼 세션이 사라졌으면 저장된 닉네임으로 조용히 다시 접속 */
+async function autoRejoin() {
+  try {
+    const s = await api('POST', '/api/session', { nickname: store.nickname });
+    store.secret = s.secret;
+    saveStore();
+    return { publicId: s.publicId, nickname: s.nickname };
+  } catch (e) {
+    if (e.status === 403 && e.text === 'room') showBlocked();
+    return null;
+  }
 }
 
 function start() {

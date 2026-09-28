@@ -9,7 +9,7 @@ html, body {
 .hidden { display: none !important; }
 
 .idle {
-  position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+  position: fixed; inset: 0; display: flex; align-items: flex-start; justify-content: center; padding-top: 12vh;
   font-size: 4vh; color: #aaa; background: #000;
 }
 
@@ -93,3 +93,16 @@ html, body {
   background: rgba(0, 0, 0, .85); font-size: 5vh; cursor: pointer;
 }
 .start small { font-size: 2.2vh; color: #aaa; }
+
+/* ---- 접속 QR ---- */
+.join {
+  position: fixed; top: 2vh; left: 2vw; display: flex; gap: 1.2vw;
+  padding: 1vh; border-radius: 1vh; background: rgba(0, 0, 0, .55); z-index: 2;
+}
+.join figure { margin: 0; text-align: center; }
+.join img { display: block; width: 16vh; height: 16vh; background: #fff; border-radius: .6vh; }
+.join figcaption { font-size: 1.8vh; margin-top: .5vh; color: #ddd; max-width: 18vh; }
+.join.big { top: auto; bottom: 14vh; left: 50%; transform: translateX(-50%); gap: 4vw; padding: 2vh 2vw; }
+.join.big img { width: 34vh; height: 34vh; }
+.join.big figcaption { font-size: 3vh; max-width: none; }
+.panel .wide { padding: .6em 0; }
