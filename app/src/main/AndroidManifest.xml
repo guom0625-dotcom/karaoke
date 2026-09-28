@@ -23,6 +23,33 @@
             </intent-filter>
         </activity>
 
+        <!-- 빅스비 루틴용: 화면 없이 서버 켜기/끄기 (앱 목록에 별도 아이콘으로 표시) -->
+        <activity
+            android:name=".StartServerActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:label="@string/start_server"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <activity
+            android:name=".StopServerActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:label="@string/stop_server"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
         <service
             android:name=".KaraokeService"
             android:exported="false"

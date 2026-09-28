@@ -183,6 +183,12 @@ open class KaraokeQueue(private val clock: () -> Long = System::currentTimeMilli
         if (_state.value.nowPlaying?.id == p.itemId) _progress.value = p
     }
 
+    /** 서버 종료 시 예약·재생 상태를 비운다 */
+    fun clear() {
+        _state.value = PlayerState()
+        _progress.value = null
+    }
+
     fun rename(ownerId: String, nickname: String) {
         _state.update { s ->
             fun QueueItem.renamed() = if (this.ownerId == ownerId) copy(nickname = nickname) else this
