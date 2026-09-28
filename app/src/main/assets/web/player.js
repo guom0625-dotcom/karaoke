@@ -321,23 +321,42 @@ const QR_KEY = 'karaoke.showQr';
 let showQr = true;
 try { showQr = localStorage.getItem(QR_KEY) !== '0'; } catch (e) { /* 기본값 */ }
 let joinInfo = null;
+let joinError = '';
 
 async function refreshJoin() {
-  if (!hostToken) return;
+  if (!hostToken) {
+    joinError = '호스트 인증이 없어 QR을 만들 수 없어요 (호스트 앱에서 플레이어를 열어 주세요)';
+    renderJoin();
+    return;
+  }
   try {
     joinInfo = await hostApi('GET', '/api/join-info');
+    joinError = joinInfo.guestUrl ? '' : '핫스팟(또는 와이파이)을 켜면 예약 QR이 나타나요';
     const t = Date.now(); // IP 가 바뀌면 QR 도 바뀌므로 캐시 방지
     const q = `host=${encodeURIComponent(hostToken)}&t=${t}`;
     if (joinInfo.guestUrl) $('qrGuest').src = `/qr/guest.svg?${q}`;
   } catch (e) {
     joinInfo = null;
+    joinError = `QR 정보를 불러오지 못했어요 (${e.status ? 'HTTP ' + e.status : e.message})`;
   }
   renderJoin();
 }
 
+$('qrGuest').addEventListener('error', () => {
+  joinError = 'QR 이미지를 불러오지 못했어요';
+  renderJoin();
+});
+$('qrGuest').addEventListener('load', () => {
+  if (joinError === 'QR 이미지를 불러오지 못했어요') { joinError = ''; renderJoin(); }
+});
+
 function renderJoin() {
-  const visible = showQr && joinInfo && joinInfo.guestUrl;
-  $('join').classList.toggle('hidden', !visible);
+  const ok = !joinError && joinInfo && joinInfo.guestUrl;
+  $('qrBox').hidden = !ok;
+  $('qrMsg').hidden = !!ok;
+  $('qrMsg').textContent = joinError;
+  // QR 이 안 나오는 이유도 보여주도록, 숨기기를 누른 경우에만 감춘다
+  $('join').classList.toggle('hidden', !showQr);
   $('join').classList.toggle('big', !state.nowPlaying); // 대기 중엔 크게
   $('toggleQr').textContent = showQr ? 'QR 숨기기' : 'QR 보이기';
 }

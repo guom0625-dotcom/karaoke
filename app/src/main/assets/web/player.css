@@ -106,3 +106,5 @@ html, body {
 .join.big img { width: 34vh; height: 34vh; }
 .join.big figcaption { font-size: 3vh; max-width: none; }
 .panel .wide { padding: .6em 0; }
+.qr-msg { font-size: 2.2vh; color: #ddd; max-width: 40vw; padding: 1vh; }
+.join.big .qr-msg { font-size: 3vh; }

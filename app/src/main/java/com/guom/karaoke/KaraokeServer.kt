@@ -46,32 +46,32 @@ val AppJson = Json {
 }
 
 @Serializable
-private data class AddRequest(val videoId: String)
+internal data class AddRequest(val videoId: String)
 
 @Serializable
-private data class NicknameRequest(val nickname: String)
+internal data class NicknameRequest(val nickname: String)
 
 @Serializable
-private data class SessionResponse(val secret: String, val publicId: String, val nickname: String)
+internal data class SessionResponse(val secret: String, val publicId: String, val nickname: String)
 
 @Serializable
-private data class MeResponse(val publicId: String, val nickname: String)
+internal data class MeResponse(val publicId: String, val nickname: String)
 
 @Serializable
-private data class StateMessage(
+internal data class StateMessage(
     val type: String = "state",
     val nowPlaying: QueueItem?,
     val queue: List<QueueItem>,
 )
 
 @Serializable
-private data class JoinInfo(val guestUrl: String?)
+internal data class JoinInfo(val guestUrl: String?)
 
 @Serializable
-private data class ProgressMessage(val type: String = "progress", val progress: Progress?)
+internal data class ProgressMessage(val type: String = "progress", val progress: Progress?)
 
 @Serializable
-private data class CommandMessage(val type: String = "command", val action: String, val seconds: Double?)
+internal data class CommandMessage(val type: String = "command", val action: String, val seconds: Double?)
 
 /**
  * 로컬 HTTP + WebSocket 서버.
