@@ -130,13 +130,15 @@ class SongDb private constructor(context: Context) :
     }
 
     /** 곡 단위로 묶기 전 원본 결과라 넉넉히 가져온다 (버전·브랜드별 중복 포함). */
-    fun search(query: String, limit: Int = 300): List<Song> {
+    fun search(query: String, channels: List<Channel>, limit: Int = 300): List<Song> {
         val terms = query.trim().split(Regex("\\s+")).map { Hangul.normalize(it) }.filter { it.isNotEmpty() }
-        if (terms.isEmpty()) return emptyList()
+        if (terms.isEmpty() || channels.isEmpty()) return emptyList()
 
         // normalize 가 기호를 모두 제거하므로 LIKE 의 %, _ 는 검색어에 남지 않는다.
         val where = StringBuilder("embeddable = 1 AND playable = 1")
         val args = mutableListOf<String>()
+        where.append(" AND channel_id IN (${channels.joinToString(",") { "?" }})")
+        args += channels.map { it.id }
         for (t in terms) {
             val col = if (Hangul.isChosungOnly(t)) "chosung_key" else "search_key"
             where.append(" AND $col LIKE ?")

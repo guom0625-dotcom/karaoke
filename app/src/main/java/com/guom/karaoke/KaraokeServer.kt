@@ -131,7 +131,7 @@ class KaraokeServer(private val context: Context) {
                 if (!call.roomOk()) return@get call.respond(HttpStatusCode.Forbidden, "room")
                 val q = call.request.queryParameters["q"].orEmpty()
                 val brand = Settings.preferredBrand(context)
-                call.respond(withContext(Dispatchers.IO) { SongGrouping.group(db.search(q), brand) })
+                call.respond(withContext(Dispatchers.IO) { SongGrouping.group(db.search(q, Settings.enabledChannels(context)), brand) })
             }
 
             // ---- 예약 큐 ----
@@ -247,7 +247,7 @@ class KaraokeServer(private val context: Context) {
         if (triedVideos.size > 200) triedVideos.clear()
         val tried = triedVideos.getOrPut(itemId) { mutableSetOf() }.apply { add(current.videoId) }
         val alt = SongGrouping.alternatives(
-            current, db.search(SongGrouping.alternativeQuery(current.title, current.artist)), tried
+            current, db.search(SongGrouping.alternativeQuery(current.title, current.artist), Settings.enabledChannels(context)), tried
         ).firstOrNull()
 
         val what = "${current.title} - ${current.artist} (${current.brand} ${current.variant ?: "기본"}) 오류 $code"

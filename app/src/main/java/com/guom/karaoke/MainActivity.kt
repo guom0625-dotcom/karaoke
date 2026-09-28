@@ -79,7 +79,7 @@ class MainActivity : Activity() {
             val q = searchInput.text.toString()
             scope.launch {
                 val brand = Settings.preferredBrand(this@MainActivity)
-                val groups = withContext(Dispatchers.IO) { SongGrouping.group(db.search(q), brand) }
+                val groups = withContext(Dispatchers.IO) { SongGrouping.group(db.search(q, Settings.enabledChannels(this@MainActivity)), brand) }
                 results.removeAllViews()
                 if (groups.isEmpty()) {
                     results.addView(TextView(this@MainActivity).apply { text = "결과 없음" })
@@ -159,6 +159,24 @@ class MainActivity : Activity() {
                     showBrand()
                 }
             })
+            // 브랜드 사용 켜기/끄기: 꺼진 브랜드는 검색·대체 후보·동기화에서 빠진다
+            for (channel in Channels.ALL) {
+                addView(Button(context).apply {
+                    fun show() {
+                        val on = Settings.isBrandEnabled(context, channel.brand)
+                        text = "${channel.brand} 사용: ${if (on) "켬" else "끔"} (눌러서 ${if (on) "끄기" else "켜기"})"
+                    }
+                    show()
+                    setOnClickListener {
+                        val on = Settings.isBrandEnabled(context, channel.brand)
+                        if (on && Settings.enabledChannels(context).size == 1) {
+                            return@setOnClickListener toast("최소 한 브랜드는 켜 두어야 해요")
+                        }
+                        Settings.setBrandEnabled(context, channel.brand, !on)
+                        show()
+                    }
+                })
+            }
             addView(searchInput.apply {
                 setOnEditorActionListener { _, _, _ -> runSearch(); true }
             })

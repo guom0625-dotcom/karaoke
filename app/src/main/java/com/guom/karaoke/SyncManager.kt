@@ -59,7 +59,7 @@ object SyncManager {
         _status.value = Status(true, "동기화 시작")
         fun finish(head: String) = "$head · 사용 ${api.unitsUsed}유닛\n${report.joinToString("\n")}\n${summary(db)}"
         try {
-            for (channel in Channels.ALL) syncChannel(api, db, channel)
+            for (channel in Settings.enabledChannels(context)) syncChannel(api, db, channel)
             _status.value = Status(false, finish("완료"))
         } catch (e: CancellationException) {
             _status.value = Status(false, finish("중지됨 (다음에 이어서 진행)"))
@@ -186,8 +186,22 @@ object Settings {
         prefs(context).edit().putString("api_key", key.trim()).apply()
     }
 
-    /** 같은 곡이 TJ·금영에 모두 있을 때 기본으로 예약할 브랜드 */
-    fun preferredBrand(context: Context): String = prefs(context).getString("preferred_brand", "TJ") ?: "TJ"
+    /** 같은 곡이 TJ·금영에 모두 있을 때 기본으로 예약할 브랜드 (TJ 는 외부 재생이 막힌 곡이 많아 KY 기본) */
+    fun preferredBrand(context: Context): String = prefs(context).getString("preferred_brand", "KY") ?: "KY"
+
+    /**
+     * 사용할 브랜드. 꺼진 브랜드는 검색·대체 후보·동기화에서 빠진다 (곡 데이터는 유지).
+     * 기본값: TJ 끔 — 실사용에서 TJ 영상 다수가 "TJ에서 외부 재생 차단"(오류 150)으로 확인됨.
+     */
+    fun isBrandEnabled(context: Context, brand: String): Boolean =
+        prefs(context).getBoolean("brand_enabled_$brand", brand != "TJ")
+
+    fun setBrandEnabled(context: Context, brand: String, enabled: Boolean) {
+        prefs(context).edit().putBoolean("brand_enabled_$brand", enabled).apply()
+    }
+
+    fun enabledChannels(context: Context): List<Channel> =
+        Channels.ALL.filter { isBrandEnabled(context, it.brand) }
 
     fun setPreferredBrand(context: Context, brand: String) {
         prefs(context).edit().putString("preferred_brand", brand).apply()
