@@ -128,26 +128,8 @@ class MainActivity : Activity() {
                 setTextIsSelectable(true)
             })
             addView(TextView(context).apply {
-                text = "※ 주소는 고정이에요 (핫스팟 IP가 바뀌면 IP 부분만 바뀜). 플레이어 화면에 QR로도 표시돼요"
+                text = "※ 주소는 고정이에요 (핫스팟 IP가 바뀌면 IP 부분만 바뀜). 플레이어 화면에 QR로 표시돼요"
                 textSize = 12f
-            })
-            val ssidInput = EditText(context).apply {
-                hint = "핫스팟 이름 (와이파이 QR용)"
-                setText(Settings.hotspotSsid(context))
-            }
-            val pwInput = EditText(context).apply {
-                hint = "핫스팟 비밀번호"
-                inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
-                setText(Settings.hotspotPassword(context))
-            }
-            addView(ssidInput)
-            addView(pwInput)
-            addView(Button(context).apply {
-                text = "핫스팟 정보 저장"
-                setOnClickListener {
-                    Settings.setHotspot(context, ssidInput.text.toString().trim(), pwInput.text.toString())
-                    toast("저장했어요. 플레이어 화면 QR은 30초 안에 반영돼요")
-                }
             })
             addView(Button(context).apply {
                 text = "동승자 주소 초기화"

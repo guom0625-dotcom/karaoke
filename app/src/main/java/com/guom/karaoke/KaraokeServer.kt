@@ -65,7 +65,7 @@ private data class StateMessage(
 )
 
 @Serializable
-private data class JoinInfo(val guestUrl: String?, val ssid: String)
+private data class JoinInfo(val guestUrl: String?)
 
 @Serializable
 private data class ProgressMessage(val type: String = "progress", val progress: Progress?)
@@ -113,11 +113,8 @@ class KaraokeServer(private val context: Context) {
             }
             get("/qr/{kind}") {
                 if (!call.isHostRequest()) return@get call.respond(HttpStatusCode.Forbidden)
-                val info = joinInfo()
                 val text = when (call.parameters["kind"]) {
-                    "guest.svg" -> info.guestUrl
-                    "wifi.svg" -> if (info.ssid.isEmpty()) null
-                        else QrCodes.wifiPayload(info.ssid, Settings.hotspotPassword(context))
+                    "guest.svg" -> joinInfo().guestUrl
                     else -> null
                 } ?: return@get call.respond(HttpStatusCode.NotFound)
                 call.response.header("Cache-Control", "no-cache")
@@ -285,10 +282,7 @@ class KaraokeServer(private val context: Context) {
     /** 현재 핫스팟 IP 기준 동승자 주소. IP 는 핫스팟을 켤 때마다 바뀔 수 있어 매번 계산한다. */
     private fun joinInfo(): JoinInfo {
         val ip = Network.candidates().firstOrNull()?.ip
-        return JoinInfo(
-            guestUrl = ip?.let { "http://$it:$PORT/guest?room=${Sessions.roomToken}" },
-            ssid = Settings.hotspotSsid(context),
-        )
+        return JoinInfo(guestUrl = ip?.let { "http://$it:$PORT/guest?room=${Sessions.roomToken}" })
     }
 
     private fun RoutingCall.isHostRequest() =

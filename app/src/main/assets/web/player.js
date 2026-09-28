@@ -316,7 +316,7 @@ async function removeItem(item) {
 }
 
 
-// ---- 동승자 접속 QR (현재 핫스팟 IP 기준, 주기적으로 갱신) ----
+// ---- 동승자 예약 페이지 QR (현재 핫스팟 IP 기준, 주기적으로 갱신) ----
 const QR_KEY = 'karaoke.showQr';
 let showQr = true;
 try { showQr = localStorage.getItem(QR_KEY) !== '0'; } catch (e) { /* 기본값 */ }
@@ -329,11 +329,6 @@ async function refreshJoin() {
     const t = Date.now(); // IP 가 바뀌면 QR 도 바뀌므로 캐시 방지
     const q = `host=${encodeURIComponent(hostToken)}&t=${t}`;
     if (joinInfo.guestUrl) $('qrGuest').src = `/qr/guest.svg?${q}`;
-    $('wifiBox').hidden = !joinInfo.ssid;
-    if (joinInfo.ssid) {
-      $('qrWifi').src = `/qr/wifi.svg?${q}`;
-      $('ssid').textContent = joinInfo.ssid;
-    }
   } catch (e) {
     joinInfo = null;
   }

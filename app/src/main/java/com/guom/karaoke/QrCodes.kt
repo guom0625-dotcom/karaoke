@@ -21,14 +21,4 @@ object QrCodes {
         return """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${m.width} ${m.height}" shape-rendering="crispEdges">""" +
             """<rect width="100%" height="100%" fill="#fff"/><path d="$path" fill="#000"/></svg>"""
     }
-
-    /**
-     * 와이파이 접속 QR 문자열. 안드로이드·iOS 카메라가 인식하는 표준 형식.
-     * SSID·비밀번호의 \ ; , : " 는 역슬래시로 이스케이프한다.
-     */
-    fun wifiPayload(ssid: String, password: String): String {
-        fun esc(s: String) = s.replace(Regex("""([\\;,:"])"""), """\\$1""")
-        return if (password.isEmpty()) "WIFI:T:nopass;S:${esc(ssid)};;"
-        else "WIFI:T:WPA;S:${esc(ssid)};P:${esc(password)};;"
-    }
 }
