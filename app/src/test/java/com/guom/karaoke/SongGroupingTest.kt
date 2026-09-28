@@ -37,6 +37,23 @@ class SongGroupingTest {
     }
 
     @Test
+    fun alternativesPreferSameVariantThenBasicThenOtherBrand() {
+        val failed = QueueItem(1, "t1f", "괜찮아도괜찮아(That's okay)", "도경수(D.O.)", "TJ", null, "여자키", 240, "a", "앨리스", 0)
+        val extra = song("k1f", "KY", "괜찮아도 괜찮아", "도경수", "여자키")
+        val alts = SongGrouping.alternatives(failed, songs + extra + song("x", "KY", "다른곡", "도경수"), tried = setOf("t1f"))
+        assertEquals(listOf("k1f", "k1", "t1", "k1m"), alts.map { it.videoId })
+
+        // 이미 실패한 영상은 다시 고르지 않음
+        val next = SongGrouping.alternatives(failed, songs + extra, tried = setOf("t1f", "k1f", "k1"))
+        assertEquals("t1", next.first().videoId)
+    }
+
+    @Test
+    fun alternativeQueryDropsParenthesizedNotes() {
+        assertEquals("괜찮아도괜찮아 도경수", SongGrouping.alternativeQuery("괜찮아도괜찮아(That's okay)", "도경수(D.O.)"))
+    }
+
+    @Test
     fun differentArtistsAreNotMerged() {
         val groups = SongGrouping.group(
             listOf(song("a", "TJ", "사랑", "가수A"), song("b", "TJ", "사랑", "가수B")),

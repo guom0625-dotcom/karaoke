@@ -180,7 +180,9 @@ function render() {
 function renderNow() {
   const np = state.nowPlaying;
   $('npTitle').textContent = np ? songLabel(np) : '예약된 곡이 없어요';
-  $('npSub').textContent = np ? `${np.nickname}${np.variant ? ' · ' + np.variant : ''} · ${np.brand}` : '';
+  $('npSub').textContent = np
+    ? `${np.nickname}${np.variant ? ' · ' + np.variant : ''} · ${np.brand}${np.replacedFrom ? ` (${np.replacedFrom} 버전이 막혀 대체됨)` : ''}`
+    : '';
   const mine = !!(np && isMine(np));
   $('controls').hidden = !mine;
   $('bar').classList.toggle('seekable', mine);

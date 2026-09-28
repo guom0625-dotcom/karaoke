@@ -6,7 +6,8 @@ let player = null;
 let playerReady = false;
 let started = false;        // 첫 탭(자동재생 정책) 이후 true
 let loadedItemId = null;    // 현재 플레이어에 로드된 큐 항목 id
-let playedItemId = null;    // 실제로 PLAYING 까지 간 항목 id (가짜 ENDED 무시용)
+let loadedKey = null;       // `${항목 id}:${영상 id}` — 막힌 영상이 다른 버전으로 바뀌면 달라진다
+let playedKey = null;       // 실제로 PLAYING 까지 간 loadedKey (가짜 ENDED 무시용)
 let retryOnVisible = false; // 백그라운드 탭에서 난 오류는 건너뛰지 않고 돌아왔을 때 다시 시도
 let state = { nowPlaying: null, queue: [] };
 let ws = null;
@@ -80,10 +81,10 @@ function onYouTubeIframeAPIReady() {
     events: {
       onReady: () => { playerReady = true; sync(); },
       onStateChange: (e) => {
-        if (e.data === YT.PlayerState.PLAYING) playedItemId = loadedItemId;
+        if (e.data === YT.PlayerState.PLAYING) playedKey = loadedKey;
         if (e.data === YT.PlayerState.ENDED && loadedItemId !== null) {
           // 로드 중에 튀는 ENDED 로 곡이 바로 넘어가지 않도록, 실제 재생된 곡만 종료 처리
-          if (playedItemId === loadedItemId) send({ type: 'ended', itemId: loadedItemId });
+          if (playedKey === loadedKey) send({ type: 'ended', itemId: loadedItemId });
           else notice('재생이 시작되지 않았어요. 화면을 탭하거나 스킵하세요');
         } else {
           reportProgress();
@@ -99,7 +100,7 @@ function onYouTubeIframeAPIReady() {
           return;
         }
         // 100: 없음/비공개, 101·150: 퍼가기 불가, 2·5·153 등 기타 → 다음 곡으로
-        notice(`재생할 수 없어요 (오류 ${e.data})${np ? ' · ' + label(np) : ''} → 다음 곡`);
+        notice(`재생할 수 없어요 (오류 ${e.data})${np ? ' · ' + label(np) : ''} → 다른 버전을 찾는 중`);
         send({ type: 'error', itemId: loadedItemId, code: e.data });
       },
     },
@@ -114,11 +115,18 @@ function sync() {
     if (loadedItemId !== null) {
       player.stopVideo();
       loadedItemId = null;
+      loadedKey = null;
     }
     return;
   }
-  if (np.id !== loadedItemId) {
+  const key = `${np.id}:${np.videoId}`;
+  if (key !== loadedKey) {
+    // 같은 예약인데 영상만 바뀜 = 막힌 영상을 다른 버전으로 대체
+    if (np.id === loadedItemId && np.replacedFrom) {
+      notice(`${np.replacedFrom} 버전이 막혀 있어 ${np.brand} ${np.variant || '기본'} 버전으로 재생해요`);
+    }
     loadedItemId = np.id;
+    loadedKey = key;
     player.loadVideoById(np.videoId);
   }
 }

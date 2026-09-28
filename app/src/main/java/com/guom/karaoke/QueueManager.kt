@@ -22,6 +22,8 @@ data class QueueItem(
     val ownerId: String,
     val nickname: String,
     val addedAt: Long,
+    /** 원래 영상이 막혀 다른 버전으로 바뀐 경우, 원래 브랜드 (예: "TJ") */
+    val replacedFrom: String? = null,
 )
 
 @Serializable
@@ -152,6 +154,28 @@ open class KaraokeQueue(private val clock: () -> Long = System::currentTimeMilli
         }
         if (finished != null) _progress.value = null
         return finished
+    }
+
+    /** 재생 중인 곡을 같은 곡의 다른 버전으로 바꾼다 (예약·예약자는 그대로). */
+    fun replaceCurrent(itemId: Long, song: Song): QueueItem? {
+        var replaced: QueueItem? = null
+        _state.update { s ->
+            val np = s.nowPlaying
+            if (np == null || np.id != itemId) {
+                replaced = null
+                s
+            } else {
+                val r = np.copy(
+                    videoId = song.videoId, title = song.title, artist = song.artist, brand = song.brand,
+                    karaokeNo = song.karaokeNo, variant = song.variant, durationSec = song.durationSec,
+                    replacedFrom = np.replacedFrom ?: np.brand,
+                )
+                replaced = r
+                s.copy(nowPlaying = r)
+            }
+        }
+        if (replaced != null) _progress.value = null
+        return replaced
     }
 
     /** 현재 곡의 진행 상황만 받는다 (늦게 도착한 이전 곡 보고는 무시) */

@@ -101,6 +101,26 @@ class KaraokeQueueTest {
     }
 
     @Test
+    fun replaceCurrentKeepsReservationAndOwner() {
+        val q = KaraokeQueue()
+        val a1 = q.add(song("1"), alice)
+        val b1 = q.add(song("2"), bob)
+        val alt = Song("k1", "UCKY", "KY", "곡1", "가수", "123", null, 210)
+
+        assertNull(q.replaceCurrent(b1.id, alt)) // 재생 중인 곡이 아니면 무시
+        val r = q.replaceCurrent(a1.id, alt)!!
+        assertEquals(a1.id, r.id)
+        assertEquals("k1", r.videoId)
+        assertEquals("KY", r.brand)
+        assertEquals("TJ", r.replacedFrom)
+        assertEquals("a", r.ownerId)
+        assertEquals(listOf(b1.id), q.state.value.queue.map { it.id })
+
+        // 두 번 대체돼도 처음 브랜드를 기억
+        assertEquals("TJ", q.replaceCurrent(a1.id, song("t9"))!!.replacedFrom)
+    }
+
+    @Test
     fun renameUpdatesOwnItems() {
         val q = KaraokeQueue()
         q.add(song("1"), alice)

@@ -217,15 +217,7 @@ class KaraokeServer(private val context: Context) {
                 // 다음 곡으로 넘긴다. 영상 자체 문제(100 없음/비공개, 101·150 퍼가기 불가)만
                 // 재생 불가로 표시해 검색에서 뺀다. 2·5·153 등은 일시적·환경 문제일 수 있어 표시하지 않는다.
                 "error" -> if (itemId != null) {
-                    val code = msg["code"]?.jsonPrimitive?.content?.toIntOrNull()
-                    QueueManager.finish(itemId)?.let { item ->
-                        val marked = code != null && code in UNPLAYABLE_CODES
-                        if (marked) db.markUnplayable(item.videoId)
-                        PlaybackLog.add(
-                            "${item.title} - ${item.artist} · 오류 $code${if (marked) " (검색에서 제외)" else ""}",
-                            item.videoId,
-                        )
-                    }
+                    handlePlaybackError(itemId, msg["code"]?.jsonPrimitive?.content?.toIntOrNull())
                 }
                 "progress" -> if (itemId != null) QueueManager.reportProgress(
                     Progress(
@@ -237,6 +229,34 @@ class KaraokeServer(private val context: Context) {
                 )
                 "skip" -> QueueManager.skip(Actor.Host)
             }
+        }
+    }
+
+    /** 예약 항목별로 이미 실패한 영상 (대체 버전을 돌아가며 시도할 때 반복 방지) */
+    private val triedVideos = java.util.concurrent.ConcurrentHashMap<Long, MutableSet<String>>()
+
+    /**
+     * 재생 오류: 막힌 영상이면 검색에서 빼고, 같은 곡의 다른 버전(TJ↔금영 등)으로 바꿔 계속 재생한다.
+     * 대체 버전이 없을 때만 다음 곡으로 넘어간다.
+     */
+    private fun handlePlaybackError(itemId: Long, code: Int?) {
+        val current = QueueManager.state.value.nowPlaying?.takeIf { it.id == itemId } ?: return
+        val blocked = code != null && code in UNPLAYABLE_CODES
+        if (blocked) db.markUnplayable(current.videoId)
+
+        if (triedVideos.size > 200) triedVideos.clear()
+        val tried = triedVideos.getOrPut(itemId) { mutableSetOf() }.apply { add(current.videoId) }
+        val alt = SongGrouping.alternatives(
+            current, db.search(SongGrouping.alternativeQuery(current.title, current.artist)), tried
+        ).firstOrNull()
+
+        val what = "${current.title} - ${current.artist} (${current.brand} ${current.variant ?: "기본"}) 오류 $code"
+        if (alt != null && QueueManager.replaceCurrent(itemId, alt) != null) {
+            PlaybackLog.add("$what → ${alt.brand} ${alt.variant ?: "기본"} 버전으로 대체", current.videoId)
+        } else {
+            QueueManager.finish(itemId)
+            triedVideos.remove(itemId)
+            PlaybackLog.add("$what → 대체 버전 없음, 다음 곡으로", current.videoId)
         }
     }
 
