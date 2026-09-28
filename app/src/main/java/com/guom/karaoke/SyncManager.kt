@@ -185,4 +185,11 @@ object Settings {
     fun setApiKey(context: Context, key: String) {
         prefs(context).edit().putString("api_key", key.trim()).apply()
     }
+
+    /** 같은 곡이 TJ·금영에 모두 있을 때 기본으로 예약할 브랜드 */
+    fun preferredBrand(context: Context): String = prefs(context).getString("preferred_brand", "TJ") ?: "TJ"
+
+    fun setPreferredBrand(context: Context, brand: String) {
+        prefs(context).edit().putString("preferred_brand", brand).apply()
+    }
 }

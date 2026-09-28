@@ -1,5 +1,6 @@
 // 플레이어 페이지: 서버 큐(WebSocket)를 받아 YouTube IFrame Player로 재생한다.
 // 반드시 호스트 폰의 크롬에서 열어야 프리미엄(광고 없음)이 적용된다.
+// 호스트 앱이 /player?host=<토큰> 으로 연다. 토큰이 있어야 재생 종료·진행 상황을 서버에 알릴 수 있다.
 
 let player = null;
 let playerReady = false;
@@ -10,9 +11,19 @@ let ws = null;
 
 const $ = (id) => document.getElementById(id);
 
+// ---- 호스트 토큰: URL → localStorage (북마크로 다시 열어도 동작) ----
+const HOST_KEY = 'karaoke.hostToken';
+let hostToken = new URLSearchParams(location.search).get('host');
+try {
+  if (hostToken) localStorage.setItem(HOST_KEY, hostToken);
+  else hostToken = localStorage.getItem(HOST_KEY);
+} catch (e) { /* 저장소 사용 불가 */ }
+if (location.search) history.replaceState(null, '', '/player');
+if (!hostToken) $('nohost').classList.remove('hidden');
+
 // ---- WebSocket ----
 function connect() {
-  ws = new WebSocket(`ws://${location.host}/ws`);
+  ws = new WebSocket(`ws://${location.host}/ws?host=${encodeURIComponent(hostToken || '')}`);
   ws.onopen = () => $('conn').classList.remove('off');
   ws.onclose = () => {
     $('conn').classList.add('off');
@@ -25,8 +36,7 @@ function connect() {
       render();
       sync();
     } else if (msg.type === 'command' && playerReady) {
-      if (msg.action === 'pause') player.pauseVideo();
-      if (msg.action === 'play') player.playVideo();
+      runCommand(msg);
     }
   };
 }
@@ -34,6 +44,30 @@ function connect() {
 function send(obj) {
   if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj));
 }
+
+function runCommand(cmd) {
+  switch (cmd.action) {
+    case 'pause': player.pauseVideo(); break;
+    case 'play': player.playVideo(); break;
+    case 'seekBy': player.seekTo(Math.max(0, player.getCurrentTime() + cmd.seconds), true); break;
+    case 'seekTo': player.seekTo(Math.max(0, cmd.seconds), true); break;
+  }
+  setTimeout(reportProgress, 300);
+}
+
+// ---- 진행 상황 보고 (동승자 페이지 진행 바) ----
+function reportProgress() {
+  if (!playerReady || loadedItemId === null) return;
+  const s = player.getPlayerState();
+  send({
+    type: 'progress',
+    itemId: loadedItemId,
+    position: player.getCurrentTime() || 0,
+    duration: player.getDuration() || 0,
+    playing: s === YT.PlayerState.PLAYING,
+  });
+}
+setInterval(reportProgress, 5000);
 
 // ---- YouTube IFrame Player ----
 function onYouTubeIframeAPIReady() {
@@ -46,6 +80,8 @@ function onYouTubeIframeAPIReady() {
       onStateChange: (e) => {
         if (e.data === YT.PlayerState.ENDED && loadedItemId !== null) {
           send({ type: 'ended', itemId: loadedItemId });
+        } else {
+          reportProgress();
         }
       },
       onError: (e) => {
@@ -81,12 +117,12 @@ function render() {
   const np = state.nowPlaying;
   $('idle').classList.toggle('hidden', !!np);
   $('now').classList.toggle('hidden', !np);
-  $('now').textContent = np ? `♪ ${label(np)}` : '';
+  $('now').textContent = np ? `♪ ${label(np)} · ${np.nickname}` : '';
 
   const ol = $('queue');
   ol.replaceChildren(...state.queue.slice(0, 5).map((item) => {
     const li = document.createElement('li');
-    li.textContent = label(item);
+    li.textContent = `${label(item)} · ${item.nickname}`;
     return li;
   }));
 }

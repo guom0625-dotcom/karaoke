@@ -91,19 +91,29 @@
 - QR 2: 동승자 페이지 주소 `http://<핫스팟IP>:<PORT>/guest?room=<토큰>`
   - 방 토큰은 세션마다 새로 발급 (간단한 접근 제어)
 
-## 5. 데이터 모델 (초안)
-- **Song**: videoId(PK), channel, rawTitle, title, artist, karaokeNo, durationSec, embeddable, playable, publishedAt
-- **QueueItem**: id, videoId, requesterSessionId, nickname, addedAt, position, status(queued/playing/done/skipped)
-- **Session**: sessionId, nickname, isHost
+## 5. 데이터 모델
+- **Song** (SQLite): videoId(PK), channelId, rawTitle, title, artist, karaokeNo, variant, durationSec, embeddable, playable, publishedAt, 검색 키
+- **QueueItem** (메모리): id, videoId, title, artist, brand, karaokeNo, variant, durationSec, ownerId(예약자 공개 ID, 호스트는 `host`), nickname, addedAt
+- **GuestSession** (메모리): secret(본인 브라우저만 앎), publicId(다른 사람에게 보이는 ID), nickname
+- 토큰: hostToken(앱에 영구 저장, 플레이어 페이지만 앎), roomToken(앱 프로세스 시작마다 새로 발급, 동승자 주소/QR)
+  - 같은 폰 크롬에서 플레이어와 동승자 페이지를 함께 열어도 역할이 섞이지 않도록 IP가 아닌 토큰으로 구분
 
-## 6. 로컬 API (초안)
-- `GET  /api/search?q=` — 곡 검색
+## 6. 로컬 API
+인증 헤더: `X-Host`(호스트 토큰), `X-Room`(방 토큰), `X-Session`(동승자 세션 secret)
+- `POST /api/session` {nickname} (방 토큰) → {secret, publicId, nickname}
+- `GET|POST /api/me` — 내 정보 / 닉네임 변경 (내 예약의 표시 이름도 변경)
+- `GET  /api/search?q=` (방 토큰) — 곡 단위로 묶인 결과 [{title, artist, versions[]}]
 - `GET  /api/queue` — 예약 현황
-- `POST /api/queue` — 예약 추가 {videoId}
-- `DELETE /api/queue/{id}` — 예약 취소 (본인 또는 호스트)
-- `POST /api/queue/reorder` — 순서 변경 (호스트)
-- `POST /api/player/{play|pause|skip}` — 재생 제어 (호스트)
-- WebSocket 이벤트: `queue_updated`, `now_playing`, `player_command`, `track_ended`
+- `POST /api/queue` {videoId} — 예약 (곡 DB에 있는 곡만)
+- `DELETE /api/queue/{id}` — 대기곡 취소 (본인·호스트)
+- `POST /api/queue/{id}/move?delta=` — 순서 변경 (호스트)
+- `POST /api/player/{play|pause|skip|seekBy|seekTo}?seconds=` — 재생 중인 곡의 예약자 본인·호스트
+- WebSocket `/ws` (플레이어는 `?host=<토큰>`)
+  - 서버→전체: `state`(nowPlaying, queue), `progress`(itemId, position, duration, playing)
+  - 서버→플레이어만: `command`(action, seconds)
+  - 플레이어→서버 (호스트 소켓만 인정): `ended`, `error`, `progress`(5초마다 + 상태 변화 시), `skip`
+- 동승자 페이지 진행 바: 마지막 보고 위치 + 경과 시간으로 로컬 보간. 대기 시간 = 현재 곡 남은 시간 + 앞 곡들 길이 합
+- 테스트: 호스트 앱의 "게스트1/2로 열기" → `127.0.0.1` + `&profile=N` (profile별로 저장소를 분리해 한 폰에서 여러 동승자 흉내)
 
 ## 7. 제약과 주의사항
 - 유튜브 약관: 공식 IFrame 플레이어만 사용, 광고 차단·건너뛰기 조작·다운로드 금지 (위반 시 API 키 차단 위험)
@@ -153,6 +163,7 @@
 0. GitHub Actions 빌드·서명·Releases 배포 파이프라인 구성 → 빈 앱으로 최초 수동 설치까지 확인
 1. 로컬 서버 + 플레이어 페이지 (하드코딩된 큐) → 크롬 + Tesor + 프리미엄 환경에서 연속 재생 검증 ✅ (v1.0.2, 광고 없음·자동 전환 확인)
 2. 채널 동기화 + 필터링 + 검색 (동승자가 처음부터 검색으로 예약하도록 원래 3단계와 순서 교체)
-3. 동승자 페이지 + 예약 큐 + WebSocket 실시간 반영
+3. 동승자 페이지 + 예약 큐 + WebSocket 실시간 반영 (+ 진행 바, 대기 시간, 본인 곡 +10/+30초·스킵) — v1.0.8~
+   - 다음: 간주점프(곡별 간주 끝 위치 학습)
 4. QR, 설정 화면, 예외 처리 마무리
 5. 앱 자동 업데이트 (Releases 확인·다운로드·설치) — 사용자 요청으로 앞당겨 구현 (v1.0.6~)

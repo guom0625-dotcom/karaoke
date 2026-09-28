@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#111318">
+  <title>차량 노래방</title>
+  <link rel="stylesheet" href="/static/guest.css">
+</head>
+<body>
+  <header class="top">
+    <span class="brand">🎤 차량 노래방</span>
+    <button id="me" class="link" hidden></button>
+    <span id="conn" class="conn off" title="연결 상태"></span>
+  </header>
+
+  <!-- 방 토큰이 없거나 만료됨 -->
+  <section id="blocked" class="card blocked" hidden>
+    <h2>접속 정보가 없어요</h2>
+    <p>차 안 화면의 QR 코드를 다시 스캔해 주세요.</p>
+  </section>
+
+  <main id="app" hidden>
+    <!-- 지금 부르는 곡 -->
+    <section class="card now">
+      <div class="label">지금 부르는 곡</div>
+      <div id="npTitle" class="np-title">예약된 곡이 없어요</div>
+      <div id="npSub" class="np-sub"></div>
+      <div id="bar" class="bar"><div id="barFill" class="bar-fill"></div></div>
+      <div class="times"><span id="tNow">0:00</span><span id="tTotal">0:00</span></div>
+      <div id="controls" class="controls" hidden>
+        <button data-act="pause" id="btnPlay">⏸ 일시정지</button>
+        <button data-act="seekBy" data-sec="10">+10초</button>
+        <button data-act="seekBy" data-sec="30">+30초</button>
+        <button data-act="skip" class="danger">스킵</button>
+      </div>
+    </section>
+
+    <!-- 검색 -->
+    <section class="card">
+      <input id="q" class="search" type="search" placeholder="곡명, 가수, 번호, 초성 (ㄷㅅㅁㅇ)" autocomplete="off" enterkeyhint="search">
+      <ul id="results" class="list"></ul>
+    </section>
+
+    <!-- 예약 현황 -->
+    <section class="card">
+      <div class="label">예약 현황 <span id="mySummary" class="muted"></span></div>
+      <ol id="queue" class="list queue"></ol>
+    </section>
+  </main>
+
+  <!-- 닉네임 -->
+  <div id="nickDialog" class="dialog" hidden>
+    <form id="nickForm" class="card">
+      <h2>닉네임을 정해 주세요</h2>
+      <p class="muted">예약 목록에 표시돼요</p>
+      <input id="nickInput" maxlength="12" autocomplete="nickname" required>
+      <button type="submit" class="primary">시작</button>
+    </form>
+  </div>
+
+  <div id="toast" class="toast" hidden></div>
+
+  <script src="/static/guest.js"></script>
+</body>
+</html>

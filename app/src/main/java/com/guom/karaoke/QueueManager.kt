@@ -17,6 +17,11 @@ data class QueueItem(
     val brand: String,
     val karaokeNo: String?,
     val variant: String?,
+    val durationSec: Int,
+    /** 예약자 공개 ID ("host" = 호스트). 세션 secret 이 아니다. */
+    val ownerId: String,
+    val nickname: String,
+    val addedAt: Long,
 )
 
 @Serializable
@@ -25,21 +30,42 @@ data class PlayerState(
     val queue: List<QueueItem> = emptyList(),
 )
 
-/** 메모리 내 예약 큐. 서버(WebSocket/API)와 호스트 화면이 공유한다. */
-object QueueManager {
+/** 플레이어 페이지가 보고하는 재생 위치 (초) */
+@Serializable
+data class Progress(val itemId: Long, val position: Double, val duration: Double, val playing: Boolean)
+
+/** 서버 → 플레이어 페이지 재생 제어 */
+@Serializable
+data class PlayerCommand(val action: String, val seconds: Double? = null)
+
+enum class Outcome { OK, NOT_FOUND, FORBIDDEN }
+
+const val HOST_OWNER_ID = "host"
+
+/**
+ * 예약 큐 (메모리). 재생 순서는 예약한 시간 순.
+ * 권한: 대기곡 취소·재생 중인 곡 제어(스킵·일시정지·이동)는 예약자 본인 + 호스트, 순서 변경은 호스트만.
+ */
+open class KaraokeQueue(private val clock: () -> Long = System::currentTimeMillis) {
     private val nextId = AtomicLong(1)
 
     private val _state = MutableStateFlow(PlayerState())
     val state = _state.asStateFlow()
 
-    /** 플레이어 페이지로 보내는 재생 제어 (play / pause) */
-    private val _commands = MutableSharedFlow<String>(extraBufferCapacity = 16)
+    private val _progress = MutableStateFlow<Progress?>(null)
+    val progress = _progress.asStateFlow()
+
+    private val _commands = MutableSharedFlow<PlayerCommand>(extraBufferCapacity = 16)
     val commands = _commands.asSharedFlow()
 
-    fun add(song: Song): QueueItem {
+    fun add(song: Song, by: Actor): QueueItem {
+        val (ownerId, nickname) = when (by) {
+            Actor.Host -> HOST_OWNER_ID to "호스트"
+            is Actor.Guest -> by.id to by.nickname
+        }
         val item = QueueItem(
-            nextId.getAndIncrement(), song.videoId, song.title, song.artist,
-            song.brand, song.karaokeNo, song.variant,
+            nextId.getAndIncrement(), song.videoId, song.title, song.artist, song.brand,
+            song.karaokeNo, song.variant, song.durationSec, ownerId, nickname, clock(),
         )
         _state.update { s ->
             if (s.nowPlaying == null) s.copy(nowPlaying = item) else s.copy(queue = s.queue + item)
@@ -47,14 +73,66 @@ object QueueManager {
         return item
     }
 
-    fun remove(id: Long): Boolean {
-        var removed = false
+    fun cancel(itemId: Long, by: Actor): Outcome {
+        var outcome = Outcome.NOT_FOUND
         _state.update { s ->
-            val next = s.queue.filterNot { it.id == id }
-            removed = next.size != s.queue.size
-            s.copy(queue = next)
+            val item = s.queue.firstOrNull { it.id == itemId }
+            outcome = when {
+                item == null -> Outcome.NOT_FOUND
+                !owns(by, item) -> Outcome.FORBIDDEN
+                else -> Outcome.OK
+            }
+            if (outcome == Outcome.OK) s.copy(queue = s.queue.filterNot { it.id == itemId }) else s
         }
-        return removed
+        return outcome
+    }
+
+    /** 순서 변경 (호스트만). delta 가 음수면 앞으로. */
+    fun move(itemId: Long, delta: Int, by: Actor): Outcome {
+        if (by != Actor.Host) return Outcome.FORBIDDEN
+        var outcome = Outcome.NOT_FOUND
+        _state.update { s ->
+            val from = s.queue.indexOfFirst { it.id == itemId }
+            if (from < 0) {
+                outcome = Outcome.NOT_FOUND
+                return@update s
+            }
+            outcome = Outcome.OK
+            val to = (from + delta).coerceIn(0, s.queue.lastIndex)
+            val list = s.queue.toMutableList()
+            list.add(to, list.removeAt(from))
+            s.copy(queue = list)
+        }
+        return outcome
+    }
+
+    /** 재생 중인 곡을 제어할 수 있는지 (예약자 본인 또는 호스트) */
+    fun canControl(by: Actor): Boolean {
+        val np = _state.value.nowPlaying ?: return false
+        return owns(by, np)
+    }
+
+    fun skip(by: Actor): Outcome {
+        var outcome = Outcome.NOT_FOUND
+        _state.update { s ->
+            val np = s.nowPlaying
+            outcome = when {
+                np == null -> Outcome.NOT_FOUND
+                !owns(by, np) -> Outcome.FORBIDDEN
+                else -> Outcome.OK
+            }
+            if (outcome == Outcome.OK) advance(s) else s
+        }
+        if (outcome == Outcome.OK) _progress.value = null
+        return outcome
+    }
+
+    /** play / pause / seekBy(초) / seekTo(초) */
+    fun control(command: PlayerCommand, by: Actor): Outcome {
+        if (_state.value.nowPlaying == null) return Outcome.NOT_FOUND
+        if (!canControl(by)) return Outcome.FORBIDDEN
+        _commands.tryEmit(command)
+        return Outcome.OK
     }
 
     /**
@@ -72,17 +150,30 @@ object QueueManager {
                 s
             }
         }
+        if (finished != null) _progress.value = null
         return finished
     }
 
-    fun skip() {
-        _state.update { s -> if (s.nowPlaying != null) advance(s) else s }
+    /** 현재 곡의 진행 상황만 받는다 (늦게 도착한 이전 곡 보고는 무시) */
+    fun reportProgress(p: Progress) {
+        if (_state.value.nowPlaying?.id == p.itemId) _progress.value = p
     }
 
-    fun command(action: String) {
-        _commands.tryEmit(action)
+    fun rename(ownerId: String, nickname: String) {
+        _state.update { s ->
+            fun QueueItem.renamed() = if (this.ownerId == ownerId) copy(nickname = nickname) else this
+            s.copy(nowPlaying = s.nowPlaying?.renamed(), queue = s.queue.map { it.renamed() })
+        }
+    }
+
+    private fun owns(by: Actor, item: QueueItem) = when (by) {
+        Actor.Host -> true
+        is Actor.Guest -> item.ownerId == by.id
     }
 
     private fun advance(s: PlayerState) =
         PlayerState(nowPlaying = s.queue.firstOrNull(), queue = s.queue.drop(1))
 }
+
+/** 앱 전체가 공유하는 큐 (서버·호스트 화면) */
+object QueueManager : KaraokeQueue()

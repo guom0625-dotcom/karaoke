@@ -129,7 +129,8 @@ class SongDb private constructor(context: Context) :
         ).use { c -> buildSet { while (c.moveToNext()) add(c.getString(0)) } }
     }
 
-    fun search(query: String, limit: Int = 50): List<Song> {
+    /** 곡 단위로 묶기 전 원본 결과라 넉넉히 가져온다 (버전·브랜드별 중복 포함). */
+    fun search(query: String, limit: Int = 300): List<Song> {
         val terms = query.trim().split(Regex("\\s+")).map { Hangul.normalize(it) }.filter { it.isNotEmpty() }
         if (terms.isEmpty()) return emptyList()
 

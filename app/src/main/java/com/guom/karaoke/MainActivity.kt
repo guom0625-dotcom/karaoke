@@ -9,6 +9,7 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.Browser
 import android.text.InputType
 import android.view.inputmethod.EditorInfo
 import android.widget.Button
@@ -23,18 +24,19 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/** 호스트 화면 (임시): 플레이어 열기, API 키·동기화, 곡 검색·예약, 큐 확인 */
+/** 호스트 화면 (임시): 플레이어 열기, 동승자 접속, API 키·동기화, 곡 검색·예약, 큐 관리 */
 class MainActivity : Activity() {
     private val scope = MainScope()
     private val db by lazy { SongDb.get(this) }
+    private val pad by lazy { (16 * resources.displayMetrics.density).toInt() }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         requestNotificationPermission()
+        Sessions.init(this)
         startForegroundService(Intent(this, KaraokeService::class.java))
 
         val info = packageManager.getPackageInfo(packageName, 0)
-        val pad = (16 * resources.displayMetrics.density).toInt()
 
         // 호스트 화면이 차 화면에 미러링될 수 있으므로 키는 가리고, 저장 후엔 끝 4자리만 보여준다.
         val apiKeyStatus = TextView(this)
@@ -57,7 +59,13 @@ class MainActivity : Activity() {
         val results = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         val updateStatus = TextView(this)
         val updateButton = Button(this)
-        val queueView = TextView(this).apply { textSize = 15f }
+        val nowPlayingView = TextView(this).apply { textSize = 15f }
+        val queueList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val brandButton = Button(this)
+        fun showBrand() {
+            brandButton.text = "같은 곡이면 기본 브랜드: ${Settings.preferredBrand(this)} (눌러서 변경)"
+        }
+        showBrand()
 
         fun section(title: String) = TextView(this).apply {
             text = title
@@ -68,20 +76,20 @@ class MainActivity : Activity() {
         fun runSearch() {
             val q = searchInput.text.toString()
             scope.launch {
-                val songs = withContext(Dispatchers.IO) { db.search(q) }
+                val brand = Settings.preferredBrand(this@MainActivity)
+                val groups = withContext(Dispatchers.IO) { SongGrouping.group(db.search(q), brand) }
                 results.removeAllViews()
-                if (songs.isEmpty()) {
+                if (groups.isEmpty()) {
                     results.addView(TextView(this@MainActivity).apply { text = "결과 없음" })
                 }
-                for (song in songs) {
+                for (g in groups) {
                     results.addView(TextView(this@MainActivity).apply {
-                        text = song.label()
+                        val more = if (g.versions.size > 1) "  (버전 ${g.versions.size}개 · 길게 눌러 선택)" else ""
+                        text = "${g.title} - ${g.artist}\n${g.versions[0].versionLabel()}$more"
                         textSize = 15f
                         setPadding(0, pad / 2, 0, pad / 2)
-                        setOnClickListener {
-                            QueueManager.add(song)
-                            toast("예약: ${song.title}")
-                        }
+                        setOnClickListener { reserve(g.versions[0]) }
+                        setOnLongClickListener { chooseVersion(g); true }
                     })
                 }
             }
@@ -94,12 +102,30 @@ class MainActivity : Activity() {
                 textSize = 20f
                 text = "${getString(R.string.app_name)} v${info.versionName}"
             })
-            addView(TextView(context).apply { text = "서버: $PLAYER_URL" })
             addView(updateStatus)
             addView(updateButton.apply { setOnClickListener { onUpdateButton() } })
             addView(Button(context).apply {
                 text = "크롬에서 플레이어 열기"
-                setOnClickListener { openPlayerInChrome() }
+                setOnClickListener { openInChrome(playerUrl(), newTab = false) }
+            })
+
+            addView(section("동승자 접속"))
+            addView(TextView(context).apply {
+                text = guestAddresses()
+                setTextIsSelectable(true)
+            })
+            addView(TextView(context).apply {
+                text = "※ 앱을 다시 시작하면 주소(방 토큰)가 바뀌어요"
+                textSize = 12f
+            })
+            addView(section("이 폰에서 동승자 테스트"))
+            addView(Button(context).apply {
+                text = "게스트1로 열기"
+                setOnClickListener { openInChrome(localGuestUrl("1"), newTab = true) }
+            })
+            addView(Button(context).apply {
+                text = "게스트2로 열기"
+                setOnClickListener { openInChrome(localGuestUrl("2"), newTab = true) }
             })
 
             addView(section("곡 DB"))
@@ -124,6 +150,13 @@ class MainActivity : Activity() {
             addView(syncStatus)
 
             addView(section("곡 검색 · 예약"))
+            addView(brandButton.apply {
+                setOnClickListener {
+                    val next = if (Settings.preferredBrand(context) == "TJ") "KY" else "TJ"
+                    Settings.setPreferredBrand(context, next)
+                    showBrand()
+                }
+            })
             addView(searchInput.apply {
                 setOnEditorActionListener { _, _, _ -> runSearch(); true }
             })
@@ -133,12 +166,13 @@ class MainActivity : Activity() {
             })
             addView(results)
 
-            addView(section("예약 현황"))
+            addView(section("예약 현황 (눌러서 순서 변경·삭제)"))
             addView(Button(context).apply {
                 text = "다음 곡으로 스킵"
-                setOnClickListener { QueueManager.skip() }
+                setOnClickListener { QueueManager.skip(Actor.Host) }
             })
-            addView(queueView)
+            addView(nowPlayingView)
+            addView(queueList)
         }
         setContentView(ScrollView(this).apply { addView(root) })
 
@@ -169,10 +203,17 @@ class MainActivity : Activity() {
 
         scope.launch {
             QueueManager.state.collect { s ->
-                queueView.text = buildString {
-                    append("▶ 재생 중: ").append(s.nowPlaying?.let { "${it.title} - ${it.artist}" } ?: "없음")
-                    append("\n\n예약 ${s.queue.size}곡\n")
-                    s.queue.forEachIndexed { i, item -> append("${i + 1}. ${item.title} - ${item.artist}\n") }
+                nowPlayingView.text = "▶ 재생 중: " +
+                    (s.nowPlaying?.let { "${it.title} - ${it.artist} · ${it.nickname}" } ?: "없음") +
+                    "\n예약 ${s.queue.size}곡"
+                queueList.removeAllViews()
+                s.queue.forEachIndexed { i, item ->
+                    queueList.addView(TextView(this@MainActivity).apply {
+                        text = "${i + 1}. ${item.title} - ${item.artist} · ${item.nickname}"
+                        textSize = 15f
+                        setPadding(0, pad / 3, 0, pad / 3)
+                        setOnClickListener { manageItem(item) }
+                    })
                 }
             }
         }
@@ -181,6 +222,65 @@ class MainActivity : Activity() {
     override fun onDestroy() {
         scope.cancel()
         super.onDestroy()
+    }
+
+    private fun reserve(song: Song) {
+        QueueManager.add(song, Actor.Host)
+        toast("예약: ${song.title}")
+    }
+
+    private fun chooseVersion(g: SongGroup) {
+        AlertDialog.Builder(this)
+            .setTitle("${g.title} - ${g.artist}")
+            .setItems(g.versions.map { it.versionLabel() }.toTypedArray()) { _, which -> reserve(g.versions[which]) }
+            .show()
+    }
+
+    private fun manageItem(item: QueueItem) {
+        AlertDialog.Builder(this)
+            .setTitle("${item.title} · ${item.nickname}")
+            .setItems(arrayOf("위로", "아래로", "맨 앞으로", "삭제")) { _, which ->
+                when (which) {
+                    0 -> QueueManager.move(item.id, -1, Actor.Host)
+                    1 -> QueueManager.move(item.id, 1, Actor.Host)
+                    2 -> QueueManager.move(item.id, -1000, Actor.Host)
+                    3 -> QueueManager.cancel(item.id, Actor.Host)
+                }
+            }
+            .show()
+    }
+
+    private fun Song.versionLabel() = buildString {
+        append(brand)
+        if (karaokeNo != null) append(" ").append(karaokeNo)
+        append(" · ").append(variant ?: "기본 반주")
+        append(" · ").append(durationSec / 60).append(":").append("%02d".format(durationSec % 60))
+    }
+
+    private fun playerUrl() = "http://127.0.0.1:${KaraokeServer.PORT}/player?host=${Sessions.hostToken}"
+
+    private fun localGuestUrl(profile: String) =
+        "http://127.0.0.1:${KaraokeServer.PORT}/guest?room=${Sessions.roomToken}&profile=$profile"
+
+    /** 핫스팟 인터페이스 후보별 동승자 주소 (첫 줄이 가장 유력) */
+    private fun guestAddresses(): String {
+        val addrs = Network.candidates()
+        if (addrs.isEmpty()) return "네트워크 주소를 찾지 못했어요 (핫스팟을 켜 주세요)"
+        return addrs.joinToString("\n") {
+            "http://${it.ip}:${KaraokeServer.PORT}/guest?room=${Sessions.roomToken}  (${it.iface})"
+        }
+    }
+
+    /** 플레이어는 프리미엄 로그인이 적용되도록 반드시 크롬으로 연다 (WebView 불가). */
+    private fun openInChrome(url: String, newTab: Boolean) {
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+        if (newTab) intent.putExtra(Browser.EXTRA_CREATE_NEW_TAB, true)
+        try {
+            startActivity(Intent(intent).setPackage("com.android.chrome"))
+        } catch (e: ActivityNotFoundException) {
+            toast("크롬이 없어 기본 브라우저로 엽니다")
+            startActivity(intent)
+        }
     }
 
     private fun onUpdateButton() {
@@ -217,25 +317,6 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun Song.label() = buildString {
-        append(title).append(" - ").append(artist)
-        if (variant != null) append(" [").append(variant).append("]")
-        append("\n").append(brand)
-        if (karaokeNo != null) append(" ").append(karaokeNo)
-        append(" · ").append(durationSec / 60).append(":").append("%02d".format(durationSec % 60))
-    }
-
-    /** 프리미엄 로그인이 적용되도록 반드시 크롬으로 연다 (WebView 불가). */
-    private fun openPlayerInChrome() {
-        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(PLAYER_URL))
-        try {
-            startActivity(Intent(intent).setPackage("com.android.chrome"))
-        } catch (e: ActivityNotFoundException) {
-            toast("크롬이 없어 기본 브라우저로 엽니다")
-            startActivity(intent)
-        }
-    }
-
     private fun requestNotificationPermission() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
@@ -245,8 +326,4 @@ class MainActivity : Activity() {
     }
 
     private fun toast(msg: String) = Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
-
-    companion object {
-        private val PLAYER_URL = "http://127.0.0.1:${KaraokeServer.PORT}/player"
-    }
 }
