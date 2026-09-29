@@ -15,7 +15,7 @@
         android:label="@string/app_name"
         android:theme="@android:style/Theme.DeviceDefault.Light">
 
-        <!-- 앱 아이콘: 화면 없이 서버 켜고 크롬 플레이어 열기 (이름 유지: 홈 아이콘·빅스비 루틴 호환) -->
+        <!-- 앱 아이콘: 알림(실행·종료·설정) 띄우기, 첫 실행 땐 설정 (이름 유지: 홈 아이콘·빅스비 루틴 호환) -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -27,6 +27,15 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- 알림의 "실행": 서버 켜고 크롬 플레이어 열기 (화면 없음) -->
+        <activity
+            android:name=".RunActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
 
         <activity
             android:name=".SettingsActivity"

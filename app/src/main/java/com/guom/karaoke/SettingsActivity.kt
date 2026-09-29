@@ -34,7 +34,7 @@ class SettingsActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         ui = UiKit(this)
-        KaraokeService.start(this)
+        KaraokeService.showNotification(this)
         requestNotificationPermission()
         // 앱을 열 때 1회 업데이트 확인 (GitHub 비인증 API 한도: 시간당 60회)
         if (Updater.state.value == Updater.State.Idle) scope.launch { Updater.check(this@SettingsActivity) }
@@ -71,8 +71,8 @@ class SettingsActivity : Activity() {
     private fun statusCard(): LinearLayout {
         val status = ui.text(size = 15f)
         scope.launch {
-            KaraokeService.running.collect { on ->
-                status.text = if (on) "🟢 서버 실행 중" else "⚪ 서버 꺼짐"
+            KaraokeService.serverRunning.collect { on ->
+                status.text = if (on) "🟢 서버 실행 중" else "⚪ 서버 꺼짐 (실행을 누르면 켜져요)"
             }
         }
         return ui.card(
@@ -80,20 +80,31 @@ class SettingsActivity : Activity() {
             status,
             addressView,
             ui.hint("동승자는 핫스팟에 연결한 폰으로 차 화면의 QR을 찍으면 돼요. 예약 관리는 차 화면의 🔍 예약에서"),
-            ui.button("크롬에서 플레이어 열기", primary = true) { Nav.openPlayer(this) },
-            ui.button("노래방 종료", danger = true) { confirmShutdown() },
+            ui.button("실행 (서버 켜고 플레이어 열기)", primary = true) {
+                KaraokeService.startServer(this)
+                Nav.openPlayer(this)
+            },
+            ui.button("서버 종료") { confirmStop(quit = false) },
+            ui.button("앱 완전 종료 (알림까지 끄기)", danger = true) { confirmStop(quit = true) },
         )
     }
 
-    private fun confirmShutdown() {
+    private fun confirmStop(quit: Boolean) {
         val q = QueueManager.state.value
         val busy = q.nowPlaying != null || q.queue.isNotEmpty()
         AlertDialog.Builder(this)
-            .setTitle("노래방을 종료할까요?")
-            .setMessage(if (busy) "재생 중인 곡과 예약 목록이 모두 사라져요." else "서버를 끄고 앱을 닫아요.")
+            .setTitle(if (quit) "앱을 완전히 종료할까요?" else "서버를 끌까요?")
+            .setMessage(
+                (if (busy) "재생 중인 곡과 예약 목록이 모두 사라져요.\n" else "") +
+                    (if (quit) "알림도 사라져요. 앱 아이콘을 누르면 다시 떠요." else "알림은 남아 있어서 다시 실행할 수 있어요.")
+            )
             .setPositiveButton("종료") { _, _ ->
-                KaraokeService.shutdown(this)
-                finishAndRemoveTask()
+                if (quit) {
+                    KaraokeService.quit(this)
+                    finishAndRemoveTask()
+                } else {
+                    KaraokeService.stopServer(this)
+                }
             }
             .setNegativeButton("취소", null)
             .show()

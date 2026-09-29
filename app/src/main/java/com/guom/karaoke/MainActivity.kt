@@ -10,20 +10,21 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Browser
+import android.widget.Toast
 
 /**
- * 앱 아이콘(빅스비 루틴 "앱 열기" 포함): 화면 없이 서버를 켜고 크롬 플레이어를 연다.
+ * 앱 아이콘(빅스비 루틴 "앱 열기" 포함): 알림창에 gomKaraoke 알림(실행·종료·설정)을 띄운다.
  * 첫 설정(API 키·곡 DB·알림 권한)이 안 됐으면 설정 화면을 연다.
  * 런처 항목 이름(MainActivity)은 홈 화면 아이콘·루틴이 깨지지 않도록 유지한다.
  */
 class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        KaraokeService.start(this)
+        KaraokeService.showNotification(this)
         if (needsSetup()) {
             startActivity(Intent(this, SettingsActivity::class.java))
         } else {
-            Nav.openPlayer(this)
+            Toast.makeText(this, "알림창의 gomKaraoke에서 '실행'을 누르세요", Toast.LENGTH_SHORT).show()
         }
         finish()
     }
@@ -35,6 +36,16 @@ class MainActivity : Activity() {
         return Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED &&
             !Settings.notificationAsked(this)
+    }
+}
+
+/** 알림의 "실행": 서버를 켜고 크롬 플레이어를 연다 (알림에서 서비스가 화면을 직접 열 수 없어 거쳐 간다) */
+class RunActivity : Activity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        KaraokeService.startServer(this)
+        Nav.openPlayer(this)
+        finish()
     }
 }
 

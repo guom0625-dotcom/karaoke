@@ -12,60 +12,84 @@ import android.os.Build
 import android.os.IBinder
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * 로컬 HTTP/WebSocket 서버를 유지하는 포그라운드 서비스.
- * 핫스팟이 켜져 있다가 꺼지면 스스로 종료한다 (설정). 알림의 "종료"로도 끌 수 있다.
+ * 상시 알림을 유지하는 포그라운드 서비스. 알림 버튼: 실행 · 종료 · 설정.
+ *  - 실행: 로컬 서버 시작 + 크롬 플레이어 열기 ([RunActivity] 경유 — 알림에서 서비스가 화면을 직접 못 연다)
+ *  - 종료: 서버만 끈다 (알림은 남아 다시 실행 가능). 핫스팟이 꺼져도 서버만 끈다 (설정)
+ *  - 알림까지 없애려면 설정의 "앱 완전 종료"
  */
 class KaraokeService : Service() {
-    private lateinit var server: KaraokeServer
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private var server: KaraokeServer? = null
+    private var hotspotJob: Job? = null
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
     override fun onCreate() {
         super.onCreate()
         startInForeground()
-        server = KaraokeServer(applicationContext)
-        server.start()
-        _running.value = true
-        scope.launch { watchHotspot() }
-        // 새 버전이 있으면 알림 문구로 알린다 (앱 화면을 안 열어도 알 수 있게)
+        // 알림 문구: 서버 상태 + 새 버전 여부
         scope.launch {
             if (Updater.state.value == Updater.State.Idle) Updater.check(applicationContext)
-            Updater.state.collect { s ->
-                val text = if (s is Updater.State.Available) "새 버전 v${s.release.versionName} 있음 · 설정에서 업데이트" else null
-                getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, buildNotification(text))
+        }
+        scope.launch {
+            _serverRunning.combine(Updater.state) { on, u -> on to u }.collect { (on, u) ->
+                val update = (u as? Updater.State.Available)?.release?.versionName
+                getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, buildNotification(on, update))
             }
         }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == ACTION_STOP) {
-            shutdown(this)
-            return START_NOT_STICKY
+        when (intent?.action) {
+            ACTION_START_SERVER -> startServer()
+            ACTION_STOP_SERVER -> stopServer()
+            ACTION_QUIT -> {
+                stopServer()
+                stopSelf()
+                return START_NOT_STICKY
+            }
         }
         return START_STICKY
     }
 
     override fun onDestroy() {
+        stopServer()
         scope.cancel()
-        server.stop()
-        _running.value = false
         super.onDestroy()
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    private fun startServer() {
+        if (server != null) return
+        server = KaraokeServer(applicationContext).also { it.start() }
+        _serverRunning.value = true
+        hotspotJob = scope.launch { watchHotspot() }
+    }
+
+    /** 서버만 끈다: 예약·재생 상태를 비운다. 동기화는 서버와 별개라 계속 진행된다. */
+    private fun stopServer() {
+        hotspotJob?.cancel()
+        hotspotJob = null
+        server?.stop()
+        server = null
+        QueueManager.clear()
+        _serverRunning.value = false
+    }
+
     /**
-     * 핫스팟 인터페이스가 한 번이라도 켜진 걸 본 뒤 연속 2회(약 20초) 사라지면 종료.
-     * 핫스팟 없이 와이파이로 테스트할 때는 켜진 적이 없으므로 종료하지 않는다.
+     * 핫스팟 인터페이스가 한 번이라도 켜진 걸 본 뒤 연속 2회(약 20초) 사라지면 서버 종료.
+     * 핫스팟 없이 와이파이로 테스트할 때는 켜진 적이 없으므로 끄지 않는다.
      */
     private suspend fun watchHotspot() {
         var seenOn = false
@@ -77,7 +101,7 @@ class KaraokeService : Service() {
                 offCount = 0
             } else if (seenOn && Settings.autoStopOnHotspotOff(this)) {
                 if (++offCount >= 2) {
-                    withContext(Dispatchers.Main) { shutdown(this@KaraokeService) }
+                    stopServer()
                     return
                 }
             }
@@ -85,24 +109,31 @@ class KaraokeService : Service() {
         }
     }
 
-    /** 상시 알림: 누르면 플레이어(크롬), 버튼은 설정·종료 */
-    private fun buildNotification(extra: String? = null): Notification {
-        val openPlayer = PendingIntent.getActivity(
-            this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE
-        )
+    private fun buildNotification(serverOn: Boolean, updateVersion: String?): Notification {
+        val flags = PendingIntent.FLAG_IMMUTABLE
         val settings = PendingIntent.getActivity(
-            this, 2, Intent(this, SettingsActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK), PendingIntent.FLAG_IMMUTABLE
+            this, 1, Intent(this, SettingsActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK), flags
+        )
+        val run = PendingIntent.getActivity(
+            this, 2, Intent(this, RunActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK), flags
         )
         val stop = PendingIntent.getService(
-            this, 1, Intent(this, KaraokeService::class.java).setAction(ACTION_STOP), PendingIntent.FLAG_IMMUTABLE
+            this, 3, Intent(this, KaraokeService::class.java).setAction(ACTION_STOP_SERVER), flags
         )
         return Notification.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_media_play)
-            .setContentTitle("${getString(R.string.app_name)} 실행 중")
-            .setContentText(extra ?: "눌러서 플레이어 열기")
-            .setContentIntent(openPlayer)
-            .addAction(Notification.Action.Builder(null, "설정", settings).build())
+            .setContentTitle("${getString(R.string.app_name)} · ${if (serverOn) "🟢 서버 실행 중" else "서버 꺼짐"}")
+            .setContentText(
+                when {
+                    updateVersion != null -> "새 버전 v$updateVersion 있음 · 설정에서 업데이트"
+                    serverOn -> "실행을 누르면 플레이어를 다시 열어요"
+                    else -> "실행을 누르면 서버를 켜고 플레이어를 열어요"
+                }
+            )
+            .setContentIntent(settings)
+            .addAction(Notification.Action.Builder(null, "실행", run).build())
             .addAction(Notification.Action.Builder(null, "종료", stop).build())
+            .addAction(Notification.Action.Builder(null, "설정", settings).build())
             .setOngoing(true)
             .build()
     }
@@ -112,7 +143,7 @@ class KaraokeService : Service() {
         nm.createNotificationChannel(
             NotificationChannel(CHANNEL_ID, "노래방 서버", NotificationManager.IMPORTANCE_LOW)
         )
-        val notification = buildNotification()
+        val notification = buildNotification(serverOn = false, updateVersion = null)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
         } else {
@@ -123,22 +154,29 @@ class KaraokeService : Service() {
     companion object {
         private const val CHANNEL_ID = "server"
         private const val NOTIFICATION_ID = 1
-        private const val ACTION_STOP = "com.guom.karaoke.STOP"
+        private const val ACTION_START_SERVER = "com.guom.karaoke.START_SERVER"
+        private const val ACTION_STOP_SERVER = "com.guom.karaoke.STOP_SERVER"
+        private const val ACTION_QUIT = "com.guom.karaoke.QUIT"
 
-        private val _running = MutableStateFlow(false)
-        /** 서버 실행 여부 (앱 화면 표시용) */
-        val running = _running.asStateFlow()
+        private val _serverRunning = MutableStateFlow(false)
+        /** 로컬 서버 실행 여부 */
+        val serverRunning = _serverRunning.asStateFlow()
 
-        fun start(context: Context) {
+        private fun send(context: Context, action: String?) {
             Sessions.init(context)
-            context.startForegroundService(Intent(context, KaraokeService::class.java))
+            val intent = Intent(context, KaraokeService::class.java)
+            if (action != null) intent.action = action
+            context.startForegroundService(intent)
         }
 
-        /** 서버 종료: 동기화 중지(다음에 이어서 진행), 예약 비우기, 서비스 정지 */
-        fun shutdown(context: Context) {
-            SyncManager.cancel()
-            QueueManager.clear()
-            context.stopService(Intent(context, KaraokeService::class.java))
-        }
+        /** 알림만 띄운다 (서버는 켜지 않음) */
+        fun showNotification(context: Context) = send(context, null)
+
+        fun startServer(context: Context) = send(context, ACTION_START_SERVER)
+
+        fun stopServer(context: Context) = send(context, ACTION_STOP_SERVER)
+
+        /** 서버를 끄고 알림까지 없앤다 */
+        fun quit(context: Context) = send(context, ACTION_QUIT)
     }
 }
