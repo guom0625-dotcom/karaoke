@@ -206,6 +206,9 @@ class SongDb private constructor(context: Context) :
             arrayOf(videoId)
         ).use { c -> if (c.moveToFirst()) c.toSong() else null }
 
+    fun hasSongs(): Boolean =
+        readableDatabase.rawQuery("SELECT 1 FROM song LIMIT 1", null).use { it.moveToFirst() }
+
     /** 재생 불가로 표시된 곡인지 (예약 실패 이유 안내용) */
     fun isMarkedUnplayable(videoId: String): Boolean =
         readableDatabase.rawQuery("SELECT playable FROM song WHERE video_id = ?", arrayOf(videoId))

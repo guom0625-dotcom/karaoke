@@ -1,14 +1,16 @@
 package com.guom.karaoke
 
+import android.Manifest
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Color
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
 import android.text.InputType
-import android.view.MenuItem
 import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
@@ -19,7 +21,11 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/** 설정: 업데이트, 곡 DB(API 키·동기화), 브랜드, 동승자 주소, 자동 종료, 배터리, 재생 오류 */
+/**
+ * 앱의 유일한 화면 (알림의 "설정" 또는 첫 실행 시).
+ * 서버 상태·동승자 주소·플레이어 열기·종료, 업데이트, 곡 DB, 브랜드, 자동 종료, 배터리, 재생 오류.
+ * 예약 관리·검색은 차 화면 플레이어의 🔍 예약 패널에서 한다.
+ */
 class SettingsActivity : Activity() {
     private val scope = MainScope()
     private lateinit var ui: UiKit
@@ -28,10 +34,13 @@ class SettingsActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         ui = UiKit(this)
-        actionBar?.setDisplayHomeAsUpEnabled(true)
-        Sessions.init(this)
+        KaraokeService.start(this)
+        requestNotificationPermission()
+        // 앱을 열 때 1회 업데이트 확인 (GitHub 비인증 API 한도: 시간당 60회)
+        if (Updater.state.value == Updater.State.Idle) scope.launch { Updater.check(this@SettingsActivity) }
 
         val page = ui.page().apply {
+            addView(statusCard())
             addView(updateCard())
             addView(songDbCard())
             addView(brandCard())
@@ -48,6 +57,7 @@ class SettingsActivity : Activity() {
     override fun onResume() {
         super.onResume()
         refreshBattery()
+        addressView.text = Nav.guestAddress(this)
     }
 
     override fun onDestroy() {
@@ -55,12 +65,47 @@ class SettingsActivity : Activity() {
         super.onDestroy()
     }
 
-    override fun onOptionsItemSelected(item: MenuItem): Boolean {
-        if (item.itemId == android.R.id.home) {
-            finish()
-            return true
+    // ---- 서버 상태 ----
+    private val addressView by lazy { ui.text(size = 13f).apply { setTextIsSelectable(true) } }
+
+    private fun statusCard(): LinearLayout {
+        val status = ui.text(size = 15f)
+        scope.launch {
+            KaraokeService.running.collect { on ->
+                status.text = if (on) "🟢 서버 실행 중" else "⚪ 서버 꺼짐"
+            }
         }
-        return super.onOptionsItemSelected(item)
+        return ui.card(
+            ui.title("gomKaraoke"),
+            status,
+            addressView,
+            ui.hint("동승자는 핫스팟에 연결한 폰으로 차 화면의 QR을 찍으면 돼요. 예약 관리는 차 화면의 🔍 예약에서"),
+            ui.button("크롬에서 플레이어 열기", primary = true) { Nav.openPlayer(this) },
+            ui.button("노래방 종료", danger = true) { confirmShutdown() },
+        )
+    }
+
+    private fun confirmShutdown() {
+        val q = QueueManager.state.value
+        val busy = q.nowPlaying != null || q.queue.isNotEmpty()
+        AlertDialog.Builder(this)
+            .setTitle("노래방을 종료할까요?")
+            .setMessage(if (busy) "재생 중인 곡과 예약 목록이 모두 사라져요." else "서버를 끄고 앱을 닫아요.")
+            .setPositiveButton("종료") { _, _ ->
+                KaraokeService.shutdown(this)
+                finishAndRemoveTask()
+            }
+            .setNegativeButton("취소", null)
+            .show()
+    }
+
+    private fun requestNotificationPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            Settings.setNotificationAsked(this)
+            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 0)
+        }
     }
 
     // ---- 앱 업데이트 ----
@@ -200,10 +245,6 @@ class SettingsActivity : Activity() {
     private val batteryText by lazy { ui.text() }
 
     private fun serverCard(): LinearLayout {
-        val address = ui.text(size = 13f).apply {
-            text = MainActivity.guestAddress(this@SettingsActivity)
-            setTextIsSelectable(true)
-        }
         lateinit var autoStop: Button
         fun showAutoStop() {
             autoStop.text = "핫스팟 꺼지면 자동 종료: ${if (Settings.autoStopOnHotspotOff(this)) "켬" else "끔"}"
@@ -215,13 +256,12 @@ class SettingsActivity : Activity() {
         showAutoStop()
         return ui.card(
             ui.title("서버 · 동승자"),
-            address,
             ui.button("동승자 주소 초기화") {
                 AlertDialog.Builder(this)
                     .setMessage("기존 QR·주소와 동승자 접속이 모두 끊겨요. 초기화할까요?")
                     .setPositiveButton("초기화") { _, _ ->
                         Sessions.resetRoom(this)
-                        address.text = MainActivity.guestAddress(this)
+                        addressView.text = Nav.guestAddress(this)
                         ui.toast("새 주소를 만들었어요")
                     }
                     .setNegativeButton("취소", null)
@@ -276,7 +316,7 @@ class SettingsActivity : Activity() {
                     list.addView(ui.text(e.text, 13f).apply {
                         setPadding(0, ui.dp(4), 0, ui.dp(4))
                         // 원인 확인용: 같은 영상을 https 주소에서 임베드해 본다
-                        setOnClickListener { MainActivity.openInChrome(this@SettingsActivity, "$EMBED_TEST_URL?v=${e.videoId}", newTab = true) }
+                        setOnClickListener { Nav.openInChrome(this@SettingsActivity, "$EMBED_TEST_URL?v=${e.videoId}") }
                     })
                 }
                 refreshUnplayable()

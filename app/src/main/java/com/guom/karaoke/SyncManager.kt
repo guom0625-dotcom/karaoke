@@ -207,6 +207,12 @@ object Settings {
         prefs(context).edit().putBoolean("auto_stop_hotspot", on).apply()
     }
 
+    fun notificationAsked(context: Context): Boolean = prefs(context).getBoolean("notification_asked", false)
+
+    fun setNotificationAsked(context: Context) {
+        prefs(context).edit().putBoolean("notification_asked", true).apply()
+    }
+
     fun enabledChannels(context: Context): List<Channel> =
         Channels.ALL.filter { isBrandEnabled(context, it.brand) }
 

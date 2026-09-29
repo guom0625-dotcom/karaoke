@@ -36,6 +36,14 @@ class KaraokeService : Service() {
         server.start()
         _running.value = true
         scope.launch { watchHotspot() }
+        // 새 버전이 있으면 알림 문구로 알린다 (앱 화면을 안 열어도 알 수 있게)
+        scope.launch {
+            if (Updater.state.value == Updater.State.Idle) Updater.check(applicationContext)
+            Updater.state.collect { s ->
+                val text = if (s is Updater.State.Available) "새 버전 v${s.release.versionName} 있음 · 설정에서 업데이트" else null
+                getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, buildNotification(text))
+            }
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -77,25 +85,34 @@ class KaraokeService : Service() {
         }
     }
 
+    /** 상시 알림: 누르면 플레이어(크롬), 버튼은 설정·종료 */
+    private fun buildNotification(extra: String? = null): Notification {
+        val openPlayer = PendingIntent.getActivity(
+            this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE
+        )
+        val settings = PendingIntent.getActivity(
+            this, 2, Intent(this, SettingsActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK), PendingIntent.FLAG_IMMUTABLE
+        )
+        val stop = PendingIntent.getService(
+            this, 1, Intent(this, KaraokeService::class.java).setAction(ACTION_STOP), PendingIntent.FLAG_IMMUTABLE
+        )
+        return Notification.Builder(this, CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.ic_media_play)
+            .setContentTitle("${getString(R.string.app_name)} 실행 중")
+            .setContentText(extra ?: "눌러서 플레이어 열기")
+            .setContentIntent(openPlayer)
+            .addAction(Notification.Action.Builder(null, "설정", settings).build())
+            .addAction(Notification.Action.Builder(null, "종료", stop).build())
+            .setOngoing(true)
+            .build()
+    }
+
     private fun startInForeground() {
         val nm = getSystemService(NotificationManager::class.java)
         nm.createNotificationChannel(
             NotificationChannel(CHANNEL_ID, "노래방 서버", NotificationManager.IMPORTANCE_LOW)
         )
-        val open = PendingIntent.getActivity(
-            this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE
-        )
-        val stop = PendingIntent.getService(
-            this, 1, Intent(this, KaraokeService::class.java).setAction(ACTION_STOP), PendingIntent.FLAG_IMMUTABLE
-        )
-        val notification = Notification.Builder(this, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.ic_media_play)
-            .setContentTitle(getString(R.string.app_name))
-            .setContentText("서버 실행 중 · 포트 ${KaraokeServer.PORT}")
-            .setContentIntent(open)
-            .addAction(Notification.Action.Builder(null, "종료", stop).build())
-            .setOngoing(true)
-            .build()
+        val notification = buildNotification()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
         } else {
