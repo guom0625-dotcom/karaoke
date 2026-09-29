@@ -93,8 +93,16 @@ object Nav {
         if (Settings.playbackMode(context) == Settings.MODE_APP) openYouTubeApp(context) else openPlayer(context)
     }
 
-    /** 유튜브 앱을 앞으로 가져온다 (이미 떠 있으면 보던 화면 그대로). 없으면 호스트 리모컨 */
+    /**
+     * 유튜브 앱을 앞으로 가져온다 (이미 떠 있으면 보던 화면 그대로).
+     * 권한이 없으면 오버레이(🔍 예약)가 안 떠 예약할 수 없으므로 설정 화면으로 안내한다.
+     */
     private fun openYouTubeApp(context: Context) {
+        if (!KaraokeService.appModeReady(context)) {
+            Toast.makeText(context, "유튜브 앱 재생에 필요한 권한을 먼저 허용해 주세요", Toast.LENGTH_LONG).show()
+            context.startActivity(Intent(context, SettingsActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            return
+        }
         val launch = context.packageManager.getLaunchIntentForPackage(YouTubeAppPlayer.YOUTUBE_PACKAGE)
         if (launch == null) {
             Toast.makeText(context, "유튜브 앱이 없어 리모컨을 열어요", Toast.LENGTH_SHORT).show()

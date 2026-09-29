@@ -88,10 +88,6 @@ class SettingsActivity : Activity() {
                 KaraokeService.startServer(this)
                 Nav.openMain(this)
             },
-            ui.button("호스트 리모컨 열기 (크롬)") {
-                KaraokeService.startServer(this)
-                Nav.openHostRemote(this)
-            },
             ui.button("서버 종료") { confirmStop(quit = false) },
             ui.button("앱 완전 종료 (알림까지 끄기)", danger = true) { confirmStop(quit = true) },
         )
