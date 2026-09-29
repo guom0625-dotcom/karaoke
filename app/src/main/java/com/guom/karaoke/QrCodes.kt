@@ -6,6 +6,16 @@ import com.google.zxing.qrcode.QRCodeWriter
 import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
 
 object QrCodes {
+    /** QR 비트맵 (오버레이 창용) */
+    fun bitmap(text: String, sizePx: Int): android.graphics.Bitmap {
+        val hints = mapOf(EncodeHintType.MARGIN to 1, EncodeHintType.CHARACTER_SET to "UTF-8")
+        val m = QRCodeWriter().encode(text, BarcodeFormat.QR_CODE, sizePx, sizePx, hints)
+        val pixels = IntArray(m.width * m.height) { i ->
+            if (m.get(i % m.width, i / m.width)) android.graphics.Color.BLACK else android.graphics.Color.WHITE
+        }
+        return android.graphics.Bitmap.createBitmap(pixels, m.width, m.height, android.graphics.Bitmap.Config.ARGB_8888)
+    }
+
     /** QR 을 SVG 로 (검은 칸 = 1×1 사각형 경로). 배경 흰색, 여백 2칸. */
     fun svg(text: String): String {
         val hints = mapOf(

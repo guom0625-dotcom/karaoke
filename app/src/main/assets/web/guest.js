@@ -6,7 +6,22 @@
 
 const $ = (id) => document.getElementById(id);
 const params = new URLSearchParams(location.search);
-const profile = params.get('profile') || 'default';
+
+// 호스트 리모컨 모드: 호스트 앱이 ?host=<토큰> 으로 연다 (유튜브 앱 재생 방식에서 예약·관리용).
+// 토큰은 플레이어 페이지와 같은 저장소 키에 두어 ?hostmode=1 로도 열 수 있게 한다.
+const HOST_KEY = 'karaoke.hostToken';
+let hostToken = null;
+if (params.get('host') || params.has('hostmode')) {
+  hostToken = params.get('host');
+  try {
+    if (hostToken) localStorage.setItem(HOST_KEY, hostToken);
+    else hostToken = localStorage.getItem(HOST_KEY);
+  } catch (e) { /* 저장소 사용 불가 */ }
+  if (location.search) history.replaceState(null, '', '/guest?hostmode=1');
+}
+const hostMode = !!hostToken;
+
+const profile = hostMode ? 'host' : (params.get('profile') || 'default');
 const STORE_KEY = `karaoke.guest.${profile}`;
 
 let store = loadStore();
@@ -33,8 +48,8 @@ if (params.get('room')) {
 
 // ---- API ----
 async function api(method, path, body) {
-  const headers = { 'X-Room': store.room || '' };
-  if (store.secret) headers['X-Session'] = store.secret;
+  const headers = hostMode ? { 'X-Host': hostToken } : { 'X-Room': store.room || '' };
+  if (!hostMode && store.secret) headers['X-Session'] = store.secret;
   if (body) headers['Content-Type'] = 'application/json';
   const res = await fetch(path, { method, headers, body: body ? JSON.stringify(body) : undefined });
   if (!res.ok) {
@@ -48,6 +63,7 @@ async function api(method, path, body) {
 }
 
 function handleError(e, forbiddenMsg) {
+  if (hostMode && (e.status === 401 || e.status === 403)) { toast('호스트 인증이 안 돼요. 알림의 실행으로 다시 열어 주세요'); return; }
   if (e.status === 401) {
     me = null;
     autoRejoin().then((m) => { if (m) { me = m; start(); toast('다시 연결했어요. 한 번 더 눌러 주세요'); } else askNickname(); });
@@ -65,6 +81,13 @@ function handleError(e, forbiddenMsg) {
 
 // ---- 시작 ----
 async function init() {
+  if (hostMode) {
+    me = { publicId: 'host', nickname: '호스트' };
+    start();
+    $('me').textContent = '🎛 호스트 리모컨';
+    $('me').disabled = true;
+    return;
+  }
   if (!store.room) return showBlocked();
   if (store.secret) {
     try { me = await api('GET', '/api/me'); } catch (e) { me = null; }
@@ -178,7 +201,8 @@ function waitSeconds(i) {
   return sec;
 }
 
-const isMine = (item) => me && item.ownerId === me.publicId;
+// 호스트는 모든 곡을 취소·제어할 수 있다
+const isMine = (item) => hostMode || (me && item.ownerId === me.publicId);
 const songLabel = (s) => `${s.title} - ${s.artist}`;
 const versionLabel = (s) =>
   `${s.brand}${s.karaokeNo ? ' ' + s.karaokeNo : ''} · ${s.variant || '기본 반주'} · ${fmt(s.durationSec)}`;
@@ -235,7 +259,8 @@ function renderQueue() {
   const myIdx = state.queue.findIndex(isMine);
   const myCount = state.queue.filter(isMine).length;
   let summary = '';
-  if (np && isMine(np)) summary = '· 지금 내 차례!';
+  if (hostMode) summary = '';
+  else if (np && isMine(np)) summary = '· 지금 내 차례!';
   else if (myIdx >= 0) summary = `· 내 예약 ${myCount}곡, 다음 차례 약 ${Math.max(1, Math.round(waitSeconds(myIdx) / 60))}분 후`;
   $('mySummary').textContent = summary;
 }

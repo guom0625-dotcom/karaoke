@@ -41,6 +41,7 @@ class SettingsActivity : Activity() {
 
         val page = ui.page().apply {
             addView(statusCard())
+            addView(playbackCard())
             addView(updateCard())
             addView(songDbCard())
             addView(brandCard())
@@ -57,7 +58,10 @@ class SettingsActivity : Activity() {
     override fun onResume() {
         super.onResume()
         refreshBattery()
+        refreshPlayback()
         addressView.text = Nav.guestAddress(this)
+        // 권한을 막 허용하고 돌아온 경우 등: 서버가 켜져 있으면 재생 방식 설정을 다시 반영
+        KaraokeService.applyMode(this)
     }
 
     override fun onDestroy() {
@@ -80,13 +84,50 @@ class SettingsActivity : Activity() {
             status,
             addressView,
             ui.hint("동승자는 핫스팟에 연결한 폰으로 차 화면의 QR을 찍으면 돼요. 예약 관리는 차 화면의 🔍 예약에서"),
-            ui.button("실행 (서버 켜고 플레이어 열기)", primary = true) {
+            ui.button("실행", primary = true) {
                 KaraokeService.startServer(this)
-                Nav.openPlayer(this)
+                Nav.openMain(this)
             },
             ui.button("서버 종료") { confirmStop(quit = false) },
             ui.button("앱 완전 종료 (알림까지 끄기)", danger = true) { confirmStop(quit = true) },
         )
+    }
+
+    // ---- 재생 방식 ----
+    private val playbackStatus by lazy { ui.text() }
+    private val modeButton by lazy { ui.button("") { toggleMode() } }
+
+    private fun playbackCard(): LinearLayout = ui.card(
+        ui.title("재생 방식"),
+        modeButton,
+        playbackStatus,
+        ui.button("① 알림 접근 권한 설정") {
+            startActivity(Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS"))
+        },
+        ui.button("② 다른 앱 위에 표시 권한 설정") {
+            startActivity(Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
+        },
+        ui.hint(
+            "유튜브 앱: 차례가 된 곡을 유튜브 앱으로 열고, 끝나면 다음 곡을 열어요. 외부 재생 제한이 없어요. " +
+                "유튜브 앱 설정 → 재생 → 자동재생을 꺼 두세요. 실행을 누르면 호스트 리모컨(예약·관리)이 열려요.\n" +
+                "크롬 플레이어: 크롬 안에서 재생 (일부 곡은 외부 재생이 막혀 있음)"
+        ),
+    )
+
+    private fun toggleMode() {
+        val next = if (Settings.playbackMode(this) == Settings.MODE_APP) Settings.MODE_CHROME else Settings.MODE_APP
+        Settings.setPlaybackMode(this, next)
+        KaraokeService.applyMode(this)
+        refreshPlayback()
+    }
+
+    private fun refreshPlayback() {
+        val app = Settings.playbackMode(this) == Settings.MODE_APP
+        modeButton.text = "재생: ${if (app) "유튜브 앱" else "크롬 플레이어"} (눌러서 변경)"
+        playbackStatus.text = if (!app) "" else buildString {
+            append(if (MediaListenerService.isEnabled(this@SettingsActivity)) "✅" else "❌").append(" ① 알림 접근 (유튜브 재생 상태 읽기)\n")
+            append(if (OverlayWindow.canShow(this@SettingsActivity)) "✅" else "❌").append(" ② 다른 앱 위에 표시 (다음 곡 열기·오버레이)")
+        }
     }
 
     private fun confirmStop(quit: Boolean) {

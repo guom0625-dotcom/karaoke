@@ -44,7 +44,7 @@ class RunActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         KaraokeService.startServer(this)
-        Nav.openPlayer(this)
+        Nav.openMain(this)
         finish()
     }
 }
@@ -70,6 +70,24 @@ object Nav {
         } catch (e: ActivityNotFoundException) {
             context.startActivity(intent)
         }
+    }
+
+    /** 동승자 예약 페이지 주소 (현재 핫스팟, 없으면 와이파이 IP). 주소가 없으면 null */
+    fun guestUrl(context: Context): String? {
+        Sessions.init(context)
+        val ip = Network.candidates().firstOrNull()?.ip ?: return null
+        return "http://$ip:${KaraokeServer.PORT}/guest?room=${Sessions.roomToken}"
+    }
+
+    /** 호스트용 리모컨 (동승자 페이지를 호스트 권한으로) — 유튜브 앱 재생 방식에서 예약·관리용 */
+    fun openHostRemote(context: Context) {
+        Sessions.init(context)
+        openInChrome(context, "http://127.0.0.1:${KaraokeServer.PORT}/guest?host=${Sessions.hostToken}", reuseTab = true)
+    }
+
+    /** 알림의 "실행" 등: 재생 방식에 따라 크롬 플레이어 또는 호스트 리모컨을 연다 */
+    fun openMain(context: Context) {
+        if (Settings.playbackMode(context) == Settings.MODE_APP) openHostRemote(context) else openPlayer(context)
     }
 
     /** 현재 핫스팟(없으면 와이파이) 기준 동승자 주소 */

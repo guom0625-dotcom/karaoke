@@ -32,6 +32,8 @@ import kotlinx.coroutines.withContext
 class KaraokeService : Service() {
     private var server: KaraokeServer? = null
     private var hotspotJob: Job? = null
+    private var appPlayer: YouTubeAppPlayer? = null
+    private var overlay: OverlayWindow? = null
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
     override fun onCreate() {
@@ -53,6 +55,7 @@ class KaraokeService : Service() {
         when (intent?.action) {
             ACTION_START_SERVER -> startServer()
             ACTION_STOP_SERVER -> stopServer()
+            ACTION_APPLY_MODE -> if (server != null) applyMode()
             ACTION_QUIT -> {
                 stopServer()
                 stopSelf()
@@ -75,12 +78,38 @@ class KaraokeService : Service() {
         server = KaraokeServer(applicationContext).also { it.start() }
         _serverRunning.value = true
         hotspotJob = scope.launch { watchHotspot() }
+        applyMode()
+    }
+
+    /** 재생 방식에 맞춰 유튜브 앱 제어기·오버레이를 켜거나 끈다 (예약 목록은 유지) */
+    private fun applyMode() {
+        val app = Settings.playbackMode(this) == Settings.MODE_APP
+        if (app) {
+            // 권한을 나중에 허용한 경우에도 다시 부르면 창이 뜬다 (show 는 중복 호출 안전)
+            (overlay ?: OverlayWindow(this, scope).also { overlay = it }).show()
+            if (appPlayer == null) appPlayer = YouTubeAppPlayer(this, scope).also { it.start() }
+        } else {
+            appPlayer?.stop()
+            appPlayer = null
+            overlay?.hide()
+            overlay = null
+        }
+        refreshNotification()
+    }
+
+    private fun refreshNotification() {
+        val update = (Updater.state.value as? Updater.State.Available)?.release?.versionName
+        getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, buildNotification(_serverRunning.value, update))
     }
 
     /** 서버만 끈다: 예약·재생 상태를 비운다. 동기화는 서버와 별개라 계속 진행된다. */
     private fun stopServer() {
         hotspotJob?.cancel()
         hotspotJob = null
+        appPlayer?.stop()
+        appPlayer = null
+        overlay?.hide()
+        overlay = null
         server?.stop()
         server = null
         QueueManager.clear()
@@ -126,8 +155,10 @@ class KaraokeService : Service() {
             .setContentText(
                 when {
                     updateVersion != null -> "새 버전 v$updateVersion 있음 · 설정에서 업데이트"
-                    serverOn -> "실행을 누르면 플레이어를 다시 열어요"
-                    else -> "실행을 누르면 서버를 켜고 플레이어를 열어요"
+                    serverOn && Settings.playbackMode(this) == Settings.MODE_APP && !appModeReady(this) ->
+                        "유튜브 앱 재생에 필요한 권한이 없어요 · 설정에서 확인"
+                    serverOn -> "실행을 누르면 ${mainLabel(this)}를 다시 열어요"
+                    else -> "실행을 누르면 서버를 켜고 ${mainLabel(this)}를 열어요"
                 }
             )
             .setContentIntent(settings)
@@ -157,6 +188,13 @@ class KaraokeService : Service() {
         private const val ACTION_START_SERVER = "com.guom.karaoke.START_SERVER"
         private const val ACTION_STOP_SERVER = "com.guom.karaoke.STOP_SERVER"
         private const val ACTION_QUIT = "com.guom.karaoke.QUIT"
+        private const val ACTION_APPLY_MODE = "com.guom.karaoke.APPLY_MODE"
+
+        /** 유튜브 앱 재생 방식에 필요한 권한 (알림 접근, 다른 앱 위에 표시) */
+        fun appModeReady(context: Context) = MediaListenerService.isEnabled(context) && OverlayWindow.canShow(context)
+
+        private fun mainLabel(context: Context) =
+            if (Settings.playbackMode(context) == Settings.MODE_APP) "리모컨" else "플레이어"
 
         private val _serverRunning = MutableStateFlow(false)
         /** 로컬 서버 실행 여부 */
@@ -175,6 +213,9 @@ class KaraokeService : Service() {
         fun startServer(context: Context) = send(context, ACTION_START_SERVER)
 
         fun stopServer(context: Context) = send(context, ACTION_STOP_SERVER)
+
+        /** 재생 방식이 바뀌었을 때 (서버가 켜져 있으면 바로 반영) */
+        fun applyMode(context: Context) = send(context, ACTION_APPLY_MODE)
 
         /** 서버를 끄고 알림까지 없앤다 */
         fun quit(context: Context) = send(context, ACTION_QUIT)

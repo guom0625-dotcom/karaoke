@@ -104,7 +104,11 @@ class KaraokeServer(private val context: Context) {
 
         routing {
             get("/") { call.respondRedirect("/guest") }
-            get("/player") { call.respondAsset("web/player.html") }
+            get("/player") {
+                // 유튜브 앱 재생 방식에선 크롬 플레이어가 같이 재생하지 않도록 호스트 리모컨으로 보낸다
+                if (Settings.playbackMode(context) == Settings.MODE_APP) return@get call.respondRedirect("/guest?hostmode=1")
+                call.respondAsset("web/player.html")
+            }
             get("/guest") { call.respondAsset("web/guest.html") }
             get("/static/{name}") {
                 val name = call.parameters["name"].orEmpty()

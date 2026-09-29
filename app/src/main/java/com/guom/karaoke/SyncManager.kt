@@ -220,6 +220,19 @@ object Settings {
         return true
     }
 
+    const val MODE_APP = "app"
+    const val MODE_CHROME = "chrome"
+
+    /**
+     * 재생 방식: 유튜브 앱(기본, 퍼가기 제한 없음) / 크롬 플레이어(IFrame, 일부 곡 외부 재생 차단).
+     * 예약 목록과 순서는 어느 쪽이든 앱이 관리한다.
+     */
+    fun playbackMode(context: Context): String = prefs(context).getString("playback_mode", MODE_APP) ?: MODE_APP
+
+    fun setPlaybackMode(context: Context, mode: String) {
+        prefs(context).edit().putString("playback_mode", mode).apply()
+    }
+
     fun notificationAsked(context: Context): Boolean = prefs(context).getBoolean("notification_asked", false)
 
     fun setNotificationAsked(context: Context) {
