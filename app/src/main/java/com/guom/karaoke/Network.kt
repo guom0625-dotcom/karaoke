@@ -23,8 +23,14 @@ object Network {
                 .sortedBy { rank(it.iface) }
         }.getOrDefault(emptyList())
 
+    fun isHotspotInterface(name: String) =
+        name.startsWith("swlan") || name.startsWith("ap") || name.startsWith("softap")
+
+    /** 핫스팟 인터페이스에 IP 가 붙어 있으면 켜진 것으로 본다 */
+    fun hotspotActive(): Boolean = candidates().any { isHotspotInterface(it.iface) }
+
     private fun rank(name: String) = when {
-        name.startsWith("swlan") || name.startsWith("ap") || name.startsWith("softap") -> 0
+        isHotspotInterface(name) -> 0
         name.startsWith("wlan") -> 1
         name.startsWith("rndis") || name.startsWith("usb") -> 2
         else -> 3

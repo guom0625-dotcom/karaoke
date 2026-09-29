@@ -200,6 +200,13 @@ object Settings {
         prefs(context).edit().putBoolean("brand_enabled_$brand", enabled).apply()
     }
 
+    /** 핫스팟이 켜져 있다가 꺼지면 서버 자동 종료 (빅스비 루틴은 "핫스팟 켜짐 → 앱 열기"만 있으면 됨) */
+    fun autoStopOnHotspotOff(context: Context): Boolean = prefs(context).getBoolean("auto_stop_hotspot", true)
+
+    fun setAutoStopOnHotspotOff(context: Context, on: Boolean) {
+        prefs(context).edit().putBoolean("auto_stop_hotspot", on).apply()
+    }
+
     fun enabledChannels(context: Context): List<Channel> =
         Channels.ALL.filter { isBrandEnabled(context, it.brand) }
 

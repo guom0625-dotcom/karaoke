@@ -6,31 +6,18 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
     <application
         android:allowBackup="false"
         android:icon="@android:drawable/sym_def_app_icon"
         android:label="@string/app_name"
-        android:theme="@android:style/Theme.Material.Light.NoActionBar">
+        android:theme="@android:style/Theme.DeviceDefault.Light">
 
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:windowSoftInputMode="adjustResize">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity>
-
-        <!-- 빅스비 루틴용: 화면 없이 서버 켜기/끄기 (앱 목록에 별도 아이콘으로 표시) -->
-        <activity
-            android:name=".StartServerActivity"
-            android:exported="true"
-            android:excludeFromRecents="true"
-            android:label="@string/start_server"
-            android:taskAffinity=""
-            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            android:launchMode="singleTask">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
@@ -38,17 +25,11 @@
         </activity>
 
         <activity
-            android:name=".StopServerActivity"
-            android:exported="true"
-            android:excludeFromRecents="true"
-            android:label="@string/stop_server"
-            android:taskAffinity=""
-            android:theme="@android:style/Theme.Translucent.NoTitleBar">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity>
+            android:name=".SettingsActivity"
+            android:exported="false"
+            android:label="설정"
+            android:parentActivityName=".MainActivity"
+            android:windowSoftInputMode="adjustResize" />
 
         <service
             android:name=".KaraokeService"
