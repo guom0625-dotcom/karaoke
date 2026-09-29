@@ -3,6 +3,12 @@ name: Build & Release APK
 on:
   push:
     branches: [main]
+    # 문서·수집기만 바뀐 푸시는 앱을 빌드하지 않는다
+    paths-ignore:
+      - 'docs/**'
+      - 'tools/**'
+      - '**.md'
+      - '.github/workflows/songs.yml'
   workflow_dispatch:
 
 permissions:
@@ -58,7 +64,7 @@ jobs:
         run: |
           cp app/build/outputs/apk/release/app-release.apk "karaoke-$VERSION_NAME.apk"
           # 앱 업데이트 알림에 표시되는 노트: 이전 릴리스 이후 커밋 제목
-          PREV=$(git describe --tags --abbrev=0 2>/dev/null || true)
+          PREV=$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || true)
           git log --no-merges --pretty='- %s' ${PREV:+$PREV..}HEAD > notes.md
           gh release create "v$VERSION_NAME" "karaoke-$VERSION_NAME.apk" \
             --title "v$VERSION_NAME" \

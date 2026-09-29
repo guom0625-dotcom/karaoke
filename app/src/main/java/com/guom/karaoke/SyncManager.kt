@@ -233,6 +233,12 @@ object Settings {
         prefs(context).edit().putString("playback_mode", mode).apply()
     }
 
+    /** GitHub 곡 목록: 마지막으로 반영한 수집본(updatedAt), 마지막 확인 시각 */
+    fun songListVersion(context: Context): String = prefs(context).getString("song_list_version", "") ?: ""
+    fun setSongListVersion(context: Context, v: String) { prefs(context).edit().putString("song_list_version", v).apply() }
+    fun songListCheckedAt(context: Context): Long = prefs(context).getLong("song_list_checked_at", 0)
+    fun setSongListCheckedAt(context: Context, t: Long) { prefs(context).edit().putLong("song_list_checked_at", t).apply() }
+
     fun notificationAsked(context: Context): Boolean = prefs(context).getBoolean("notification_asked", false)
 
     fun setNotificationAsked(context: Context) {

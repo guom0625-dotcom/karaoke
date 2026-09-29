@@ -1,0 +1,56 @@
+name: Crawl song list
+
+# TJ·금영 채널 곡 목록을 매일 수집해 Release `songs-db` 에 올린다 (앱이 받아서 곡 DB 에 합침).
+on:
+  schedule:
+    - cron: '0 18 * * *'   # 매일 03:00 KST
+  workflow_dispatch:
+    inputs:
+      budget:
+        description: '이번 실행 유닛 예산 (앱과 같은 키라 하루 1만 중 일부만)'
+        default: '7000'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: songs-db
+  cancel-in-progress: false
+
+jobs:
+  crawl:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Download previous list and state
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p out
+          gh release download songs-db -D out -p songs.jsonl.gz -p crawl-state.json 2>/dev/null \
+            || echo "첫 실행: 이전 목록 없음"
+          ls -la out
+
+      - name: Crawl
+        env:
+          YT_API_KEY: ${{ secrets.YT_API_KEY }}
+          UNIT_BUDGET: ${{ github.event.inputs.budget || '7000' }}
+          OUT_DIR: out
+        run: |
+          if [ -z "$YT_API_KEY" ]; then
+            echo "::error::YT_API_KEY secret이 없습니다 (gh secret set YT_API_KEY)"
+            exit 1
+          fi
+          python3 tools/crawl_songs.py | tee crawl.log
+          echo '```' >> "$GITHUB_STEP_SUMMARY"; cat crawl.log >> "$GITHUB_STEP_SUMMARY"; echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Publish to songs-db release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # 앱 업데이트(/releases/latest)와 섞이지 않도록 prerelease + latest 아님
+          gh release view songs-db >/dev/null 2>&1 || gh release create songs-db \
+            --prerelease --latest=false --title "곡 목록 (자동 수집)" \
+            --notes "TJ·금영 노래방 채널 영상 목록. GitHub Actions가 매일 갱신하고 앱이 받아서 곡 DB에 합칩니다."
+          gh release upload songs-db out/songs.jsonl.gz out/songs-meta.json out/crawl-state.json --clobber

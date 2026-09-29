@@ -43,6 +43,8 @@ class KaraokeService : Service() {
         scope.launch {
             if (Updater.state.value == Updater.State.Idle) Updater.check(applicationContext)
         }
+        // GitHub 곡 목록(Actions 가 매일 수집): 하루 한 번 새 수집본이 있으면 받아 합친다
+        scope.launch { SongListDownloader.checkIfDue(applicationContext) }
         scope.launch {
             _serverRunning.combine(Updater.state) { on, u -> on to u }.collect { (on, u) ->
                 val update = (u as? Updater.State.Available)?.release?.versionName

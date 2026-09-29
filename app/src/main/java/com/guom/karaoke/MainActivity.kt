@@ -30,7 +30,7 @@ class MainActivity : Activity() {
     }
 
     private fun needsSetup(): Boolean {
-        if (Settings.apiKey(this).isNullOrBlank()) return true
+        // 곡 목록은 GitHub 에서 받으므로 API 키는 필수가 아니다 (유튜브에서 더 찾기에만 필요)
         if (!SongDb.get(this).hasSongs()) return true
         // 알림 권한은 처음 한 번만 설정 화면에서 묻는다 (거절해도 계속 묻지 않음)
         return Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&

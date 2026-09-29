@@ -231,18 +231,30 @@ class SettingsActivity : Activity() {
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
         }
         val syncStatus = ui.text(size = 13f)
-        val syncButton = ui.button("채널 동기화") {
+        val syncButton = ui.button("직접 채널 동기화") {
             if (SyncManager.isRunning()) SyncManager.cancel() else SyncManager.start(this)
         }
         scope.launch {
             syncStatus.text = withContext(Dispatchers.IO) { SyncManager.summary(db) }
             SyncManager.status.collect { s ->
-                syncButton.text = if (s.running) "동기화 중지" else "채널 동기화"
+                syncButton.text = if (s.running) "동기화 중지" else "직접 채널 동기화"
                 if (s.message.isNotEmpty()) syncStatus.text = s.message
+            }
+        }
+        val githubStatus = ui.text(size = 13f)
+        scope.launch {
+            SongListDownloader.status.collect { s ->
+                githubStatus.text = s.ifEmpty { "GitHub 곡 목록: ${Settings.songListVersion(this@SettingsActivity).take(10).ifEmpty { "아직 안 받음" }}" }
             }
         }
         return ui.card(
             ui.title("곡 DB"),
+            githubStatus,
+            ui.button("GitHub에서 곡 목록 받기", primary = true) {
+                scope.launch { SongListDownloader.check(this@SettingsActivity, force = true) }
+            },
+            ui.hint("곡 목록은 GitHub Actions가 매일 모아 두고, 서버를 켤 때 하루 한 번 자동으로 받아요 (API 할당량 안 씀)"),
+            ui.text("YouTube API 키 (유튜브에서 더 찾기·직접 동기화용)", 13f, "#8e8e93"),
             keyStatus,
             keyInput,
             ui.button("API 키 저장") {
@@ -255,7 +267,7 @@ class SettingsActivity : Activity() {
             },
             syncButton,
             syncStatus,
-            ui.hint("처음 한 번 전체를 받고, 이후엔 새 곡만 받아요. 채널 재생목록은 30일마다 다시 확인해요"),
+            ui.hint("직접 동기화(고급): 폰에서 YouTube API로 목록을 받아요. 보통은 GitHub 목록으로 충분해요"),
         )
     }
 
