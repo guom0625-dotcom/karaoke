@@ -307,7 +307,8 @@ async function reserve(song) {
 }
 
 async function cancel(item) {
-  if (!confirm(`'${item.title}' 예약을 취소할까요?`)) return;
+  // 호스트 리모컨은 오버레이 패널(WebView)에서 열리기도 해서 확인 창을 띄울 수 없다 → 바로 취소
+  if (!hostMode && !confirm(`'${item.title}' 예약을 취소할까요?`)) return;
   try {
     await api('DELETE', `/api/queue/${item.id}`);
   } catch (e) {

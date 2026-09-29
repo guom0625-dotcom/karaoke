@@ -6,7 +6,11 @@ import android.graphics.PixelFormat
 import android.graphics.drawable.GradientDrawable
 import android.provider.Settings as SystemSettings
 import android.view.Gravity
+import android.view.View
 import android.view.WindowManager
+import android.webkit.WebView
+import android.webkit.WebViewClient
+import android.widget.Button
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -17,12 +21,17 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 /**
- * 유튜브 앱 화면 위 구석의 작은 창: 다음 곡 + 예약 QR. 터치는 아래(유튜브)로 통과시킨다.
+ * 유튜브 앱 화면 위 구석의 작은 창: 다음 곡 + 예약 QR + 🔍 예약 버튼.
+ * 🔍 예약을 누르면 화면 오른쪽에 리모컨 패널(호스트 리모컨 페이지를 WebView 로)이 뜨고,
+ * 왼쪽에선 유튜브 영상이 계속 재생된다. 패널 밖 터치는 유튜브로 간다.
+ * (WebView 에는 우리 리모컨 페이지만 띄운다. 유튜브 영상은 유튜브 앱이 재생)
  * Android 15+ 에서는 이 창이 떠 있어야 백그라운드에서 유튜브 앱을 열 수 있다.
  */
 class OverlayWindow(private val context: Context, private val scope: CoroutineScope) {
     private val wm = context.getSystemService(WindowManager::class.java)
     private var root: LinearLayout? = null
+    private var panel: LinearLayout? = null
+    private var webView: WebView? = null
     private val jobs = mutableListOf<Job>()
     private var qrFor: String? = null
 
@@ -53,12 +62,27 @@ class OverlayWindow(private val context: Context, private val scope: CoroutineSc
             addView(next)
             addView(qr)
             addView(caption)
+            addView(Button(context).apply {
+                text = "🔍 예약"
+                textSize = 13f
+                isAllCaps = false
+                setTextColor(Color.BLACK)
+                background = GradientDrawable().apply {
+                    setColor(Color.parseColor("#ffcc33"))
+                    cornerRadius = 8 * d
+                }
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, (36 * d).toInt()
+                ).apply { topMargin = (6 * d).toInt() }
+                setOnClickListener { openPanel() }
+            })
         }
+        // 작은 창만 터치를 받는다 (창 밖은 유튜브로)
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
             PixelFormat.TRANSLUCENT,
         ).apply {
             gravity = Gravity.TOP or Gravity.END
@@ -84,7 +108,7 @@ class OverlayWindow(private val context: Context, private val scope: CoroutineSc
                 if (url != qrFor) {
                     qrFor = url
                     qr.setImageBitmap(url?.let { QrCodes.bitmap(it, (84 * d).toInt()) })
-                    qr.visibility = if (url == null) android.view.View.GONE else android.view.View.VISIBLE
+                    qr.visibility = if (url == null) View.GONE else View.VISIBLE
                     caption.visibility = qr.visibility
                 }
                 delay(30_000)
@@ -92,7 +116,62 @@ class OverlayWindow(private val context: Context, private val scope: CoroutineSc
         }
     }
 
+    /** 리모컨 패널: 화면 오른쪽 약 절반, 키보드 입력 가능, 패널 밖 터치는 유튜브로 */
+    private fun openPanel() {
+        if (panel != null) return
+        val d = context.resources.displayMetrics.density
+        val screenW = context.resources.displayMetrics.widthPixels
+        val width = maxOf((360 * d).toInt(), (screenW * 0.45).toInt()).coerceAtMost(screenW)
+        Sessions.init(context)
+        val web = WebView(context).apply {
+            settings.javaScriptEnabled = true
+            settings.domStorageEnabled = true
+            setBackgroundColor(Color.parseColor("#111318"))
+            webViewClient = WebViewClient() // 링크를 외부 브라우저로 넘기지 않음
+            loadUrl("http://127.0.0.1:${KaraokeServer.PORT}/guest?host=${Sessions.hostToken}")
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f)
+        }
+        val close = Button(context).apply {
+            text = "✕ 닫기 (영상으로 돌아가기)"
+            isAllCaps = false
+            textSize = 14f
+            setTextColor(Color.WHITE)
+            setBackgroundColor(Color.parseColor("#2b2f3a"))
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, (44 * d).toInt())
+            setOnClickListener { closePanel() }
+        }
+        val view = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(Color.parseColor("#111318"))
+            addView(close)
+            addView(web)
+        }
+        val params = WindowManager.LayoutParams(
+            width,
+            WindowManager.LayoutParams.MATCH_PARENT,
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL, // 포커스는 받되(키보드) 패널 밖 터치는 유튜브로
+            PixelFormat.TRANSLUCENT,
+        ).apply {
+            gravity = Gravity.TOP or Gravity.END
+            softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
+        }
+        runCatching { wm.addView(view, params) }.onFailure { web.destroy(); return }
+        panel = view
+        webView = web
+        root?.visibility = View.GONE
+    }
+
+    private fun closePanel() {
+        panel?.let { runCatching { wm.removeView(it) } }
+        webView?.destroy()
+        panel = null
+        webView = null
+        root?.visibility = View.VISIBLE
+    }
+
     fun hide() {
+        closePanel()
         jobs.forEach { it.cancel() }
         jobs.clear()
         root?.let { runCatching { wm.removeView(it) } }
