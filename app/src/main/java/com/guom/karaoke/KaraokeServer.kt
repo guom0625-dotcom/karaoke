@@ -65,6 +65,12 @@ internal data class StateMessage(
 )
 
 @Serializable
+internal data class LinkRequest(val url: String)
+
+@Serializable
+internal data class OnlineSearchResponse(val groups: List<SongGroup>, val added: Int, val remainingToday: Int)
+
+@Serializable
 internal data class JoinInfo(val guestUrl: String?)
 
 @Serializable
@@ -151,6 +157,37 @@ class KaraokeServer(private val context: Context) {
                 val brand = Settings.preferredBrand(context)
                 val field = SearchField.parse(call.request.queryParameters["field"])
                 call.respond(withContext(Dispatchers.IO) { SongGrouping.group(db.search(q, Settings.enabledChannels(context), field), brand) })
+            }
+
+            // ---- 곡 DB 에 없는 곡: 유튜브에서 더 찾기 (하루 횟수 제한) ----
+            post("/api/search/online") {
+                if (!call.roomOk()) return@post call.respond(HttpStatusCode.Forbidden, "room")
+                val q = call.request.queryParameters["q"].orEmpty().trim()
+                if (q.isEmpty()) return@post call.respond(HttpStatusCode.BadRequest, "q")
+                val field = SearchField.parse(call.request.queryParameters["field"])
+                when (val r = withContext(Dispatchers.IO) { OnlineLookup.search(context, q) }) {
+                    is OnlineLookup.Result.Found -> {
+                        val local = withContext(Dispatchers.IO) { db.search(q, Settings.enabledChannels(context), field) }
+                        val songs = (r.newSongs + local).distinctBy { it.videoId }
+                        call.respond(
+                            OnlineSearchResponse(
+                                SongGrouping.group(songs, Settings.preferredBrand(context)), r.newSongs.size, r.remainingToday,
+                            )
+                        )
+                    }
+                    OnlineLookup.Result.NoApiKey -> call.respond(HttpStatusCode.ServiceUnavailable, "nokey")
+                    OnlineLookup.Result.DailyLimitReached -> call.respond(HttpStatusCode.TooManyRequests, "limit")
+                    is OnlineLookup.Result.Failed -> call.respond(HttpStatusCode.BadGateway, r.reason)
+                }
+            }
+            // 유튜브 링크로 곡 추가 (호스트만)
+            post("/api/songs/by-link") {
+                if (call.actor() != Actor.Host) return@post call.respond(HttpStatusCode.Forbidden)
+                val url = call.receive<LinkRequest>().url
+                when (val r = withContext(Dispatchers.IO) { OnlineLookup.addByLink(context, url) }) {
+                    is OnlineLookup.LinkResult.Ok -> call.respond(r.song)
+                    is OnlineLookup.LinkResult.Error -> call.respond(HttpStatusCode.UnprocessableEntity, r.message)
+                }
             }
 
             // ---- 예약 큐 ----

@@ -324,9 +324,36 @@ async function search() {
   }
 }
 
-function renderResults(groups) {
+// 곡 DB 에 없는 곡을 유튜브(TJ·금영 채널)에서 찾아 DB 에 추가 — 하루 횟수 제한
+function onlineButton() {
+  return el('li', {}, el('button', {
+    className: 'online',
+    textContent: '🔎 찾는 곡이 없나요? 유튜브에서 더 찾기',
+    onclick: onlineSearch,
+  }));
+}
+
+async function onlineSearch() {
+  const q = $('q').value.trim();
+  if (!q) return;
+  const seq = ++searchSeq;
+  toast('유튜브에서 찾는 중…');
+  try {
+    const r = await api('POST', `/api/search/online?q=${encodeURIComponent(q)}&field=${searchField}`);
+    if (seq !== searchSeq) return;
+    renderResults(r.groups, false);
+    toast(r.added ? `새 곡 ${r.added}개를 찾았어요 (오늘 ${r.remainingToday}번 남음)` : `새로 찾은 곡이 없어요 (오늘 ${r.remainingToday}번 남음)`);
+  } catch (e) {
+    if (e.status === 429) toast('오늘 유튜브 검색 횟수를 다 썼어요');
+    else if (e.status === 503) toast('호스트 앱에 API 키가 없어요');
+    else if (e.status === 502) toast(`유튜브 검색 실패: ${e.text}`);
+    else handleError(e);
+  }
+}
+
+function renderResults(groups, showOnline = true) {
   if (!groups.length) {
-    $('results').replaceChildren(el('li', { className: 'muted', textContent: '검색 결과가 없어요' }));
+    $('results').replaceChildren(el('li', { className: 'muted', textContent: '검색 결과가 없어요' }), showOnline ? onlineButton() : null);
     return;
   }
   $('results').replaceChildren(...groups.map((g) => {
@@ -348,7 +375,7 @@ function renderResults(groups) {
           el('div', { className: 'row-sub', textContent: versionLabel(def) })),
         more),
       g.versions.length > 1 ? versions : null);
-  }));
+  }), showOnline ? onlineButton() : el('li'));
 }
 
 // ---- 토스트 ----

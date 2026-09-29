@@ -37,6 +37,15 @@ class YouTubeApi(
     data class PlaylistInfo(val id: String, val title: String, val itemCount: Long)
     data class PlaylistPage(val items: List<PlaylistEntry>, val nextPageToken: String?)
     data class VideoDetails(val durationSec: Int, val embeddable: Boolean)
+    data class VideoInfo(
+        val id: String,
+        val channelId: String,
+        val title: String,
+        val description: String,
+        val publishedAt: String?,
+        val durationSec: Int,
+        val embeddable: Boolean,
+    )
 
     /** 이번 실행에서 쓴 할당량 (목록 호출은 모두 1유닛) */
     var unitsUsed = 0
@@ -91,6 +100,35 @@ class YouTubeApi(
         return result
     }
 
+    /**
+     * 채널 안에서 키워드 검색 (호출당 100유닛 — 곡 DB 에 없는 곡을 찾을 때만 쓴다).
+     * 영상 ID 목록을 돌려준다.
+     */
+    fun search(query: String, channelId: String, maxResults: Int = 25): List<String> =
+        get(
+            "search",
+            mapOf("part" to "id", "q" to query, "channelId" to channelId, "type" to "video", "maxResults" to "$maxResults")
+        ).arr("items").mapNotNull { it.jsonObject.obj("id").str("videoId") }
+
+    /** 영상 상세 (제목·전체 설명·채널·길이·퍼가기). 50개당 1유닛 */
+    fun videoInfos(ids: List<String>): List<VideoInfo> {
+        if (ids.isEmpty()) return emptyList()
+        return get("videos", mapOf("part" to "snippet,contentDetails,status", "id" to ids.joinToString(","), "maxResults" to "50"))
+            .arr("items").mapNotNull { el ->
+                val v = el.jsonObject
+                val snippet = v.obj("snippet")
+                VideoInfo(
+                    id = v.str("id") ?: return@mapNotNull null,
+                    channelId = snippet.str("channelId").orEmpty(),
+                    title = snippet.str("title").orEmpty(),
+                    description = snippet.str("description").orEmpty(),
+                    publishedAt = snippet.str("publishedAt"),
+                    durationSec = parseIsoDuration(v.obj("contentDetails").str("duration").orEmpty()),
+                    embeddable = v.obj("status")["embeddable"]?.jsonPrimitive?.content == "true",
+                )
+            }
+    }
+
     fun videos(ids: List<String>): Map<String, VideoDetails> {
         if (ids.isEmpty()) return emptyMap()
         return get("videos", mapOf("part" to "contentDetails,status", "id" to ids.joinToString(","), "maxResults" to "50"))
@@ -129,6 +167,12 @@ class YouTubeApi(
     }
 
     companion object {
+        /** 저장된 API 키로 클라이언트 생성 (키가 없으면 null) */
+        fun create(context: Context): YouTubeApi? {
+            val key = Settings.apiKey(context)?.takeIf { it.isNotBlank() } ?: return null
+            return YouTubeApi(key, context.packageName, signingCertSha1(context))
+        }
+
         /** API 키의 안드로이드 앱 제한에 쓰이는 서명 인증서 SHA-1 (대문자 hex, 구분자 없음) */
         fun signingCertSha1(context: Context): String {
             val pm = context.packageManager

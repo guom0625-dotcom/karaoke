@@ -256,12 +256,56 @@ $('pq').addEventListener('keydown', (ev) => {
 async function panelSearch() {
   const q = $('pq').value.trim();
   const seq = ++pSeq;
-  if (!q) { $('pResults').replaceChildren(); return; }
+  if (!q) { $('pResults').replaceChildren(panelExtras(false)); return; }
   try {
     const groups = await hostApi('GET', `/api/search?q=${encodeURIComponent(q)}&field=${pField}`);
     if (seq !== pSeq) return;
+    renderPanelResults(groups, true);
+  } catch (e) {
+    hostError(e);
+  }
+}
+
+// 곡 DB 에 없는 곡: 유튜브(TJ·금영 채널)에서 찾아 DB 에 추가 — 하루 횟수 제한
+function panelExtras(showOnline) {
+  return el('li', {},
+    showOnline ? el('button', { className: 'wide-row', textContent: '🔎 유튜브에서 더 찾기', onclick: panelOnlineSearch }) : null,
+    el('button', { className: 'wide-row', textContent: '🔗 유튜브 링크로 추가', onclick: addByLink }));
+}
+
+async function panelOnlineSearch() {
+  const q = $('pq').value.trim();
+  if (!q) return notice('검색어를 먼저 입력하세요');
+  const seq = ++pSeq;
+  notice('유튜브에서 찾는 중…');
+  try {
+    const r = await hostApi('POST', `/api/search/online?q=${encodeURIComponent(q)}&field=${pField}`);
+    if (seq !== pSeq) return;
+    renderPanelResults(r.groups, false);
+    notice(r.added ? `새 곡 ${r.added}개를 찾았어요 (오늘 ${r.remainingToday}번 남음)` : `새로 찾은 곡이 없어요 (오늘 ${r.remainingToday}번 남음)`);
+  } catch (e) {
+    if (e.status === 429) notice('오늘 유튜브 검색 횟수를 다 썼어요');
+    else if (e.status === 503) notice('API 키가 없어요 (설정에서 입력)');
+    else if (e.status === 502) notice(`유튜브 검색 실패: ${e.text}`);
+    else hostError(e);
+  }
+}
+
+async function addByLink() {
+  const url = prompt('TJ·금영 유튜브 영상 링크를 붙여넣으세요');
+  if (!url) return;
+  try {
+    const song = await hostApi('POST', '/api/songs/by-link', { url });
+    await reserve(song);
+  } catch (e) {
+    if (e.status === 422) notice(e.text);
+    else hostError(e);
+  }
+}
+
+function renderPanelResults(groups, showOnline) {
     if (!groups.length) {
-      $('pResults').replaceChildren(el('li', { className: 'muted', textContent: '검색 결과가 없어요' }));
+      $('pResults').replaceChildren(el('li', { className: 'muted', textContent: '검색 결과가 없어요' }), panelExtras(showOnline));
       return;
     }
     $('pResults').replaceChildren(...groups.map((g) => {
@@ -277,10 +321,7 @@ async function panelSearch() {
             ? el('button', { className: 'small', textContent: `버전 ${g.versions.length}`, onclick: () => { versions.hidden = !versions.hidden; } })
             : null),
         g.versions.length > 1 ? versions : null);
-    }));
-  } catch (e) {
-    hostError(e);
-  }
+    }), panelExtras(showOnline));
 }
 
 async function reserve(song) {

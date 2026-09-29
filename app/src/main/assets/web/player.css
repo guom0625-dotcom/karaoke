@@ -108,3 +108,4 @@ html, body {
 .panel .wide { padding: .6em 0; }
 .qr-msg { font-size: 2.2vh; color: #ddd; max-width: 40vw; padding: 1vh; }
 .join.big .qr-msg { font-size: 3vh; }
+.panel .wide-row { display: block; width: 100%; margin-top: .5em; padding: .6em; font-size: .85em; background: none; border: 1px dashed #555; color: #bbb; }

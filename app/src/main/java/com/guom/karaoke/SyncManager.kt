@@ -207,6 +207,19 @@ object Settings {
         prefs(context).edit().putBoolean("auto_stop_hotspot", on).apply()
     }
 
+    /** "유튜브에서 더 찾기" 하루 사용 횟수 (search.list 는 호출당 100유닛이라 제한) */
+    fun onlineSearchCount(context: Context, day: String): Int =
+        if (prefs(context).getString("online_search_day", "") == day) prefs(context).getInt("online_search_count", 0) else 0
+
+    /** 한도 안이면 1회 사용으로 기록하고 true */
+    @Synchronized
+    fun tryUseOnlineSearch(context: Context, day: String, limit: Int): Boolean {
+        val used = onlineSearchCount(context, day)
+        if (used >= limit) return false
+        prefs(context).edit().putString("online_search_day", day).putInt("online_search_count", used + 1).apply()
+        return true
+    }
+
     fun notificationAsked(context: Context): Boolean = prefs(context).getBoolean("notification_asked", false)
 
     fun setNotificationAsked(context: Context) {
