@@ -22,16 +22,32 @@ object OnlineLookup {
         data class Failed(val reason: String) : Result
     }
 
+    /** 오늘 이미 유튜브에서 찾아본 검색어 (정규화) — 같은 검색어는 다시 호출하지 않는다 */
+    private val searchedToday = mutableSetOf<String>()
+    private var searchedDay = ""
+
     /** 켜진 브랜드 채널 안에서 검색해, 새로 찾은 곡을 DB 에 넣고 돌려준다 */
+    @Synchronized
     fun search(context: Context, query: String): Result {
         val api = YouTubeApi.create(context) ?: return Result.NoApiKey
-        if (!Settings.tryUseOnlineSearch(context, today(), DAILY_LIMIT)) return Result.DailyLimitReached
+        val day = today()
+        if (day != searchedDay) {
+            searchedDay = day
+            searchedToday.clear()
+        }
+        val key = Hangul.normalize(query) + "|" + Settings.enabledChannels(context).joinToString(",") { it.brand }
+        if (key in searchedToday) {
+            return Result.Found(emptyList(), DAILY_LIMIT - Settings.onlineSearchCount(context, day))
+        }
+        if (!Settings.tryUseOnlineSearch(context, day, DAILY_LIMIT)) return Result.DailyLimitReached
         val db = SongDb.get(context)
         return try {
             val ids = Settings.enabledChannels(context).flatMap { api.search(query, it.id) }.distinct()
             val known = db.knownIds(ids)
             val unknown = ids.filterNot { it in known }
-            Result.Found(importSongs(db, api.videoInfos(unknown)), DAILY_LIMIT - Settings.onlineSearchCount(context, today()))
+            val found = importSongs(db, api.videoInfos(unknown))
+            searchedToday += key
+            Result.Found(found, DAILY_LIMIT - Settings.onlineSearchCount(context, day))
         } catch (e: YouTubeApi.ApiException) {
             Result.Failed(if (e.reason == "quotaExceeded") "오늘 유튜브 API 할당량을 다 썼어요" else e.reason)
         } catch (e: Exception) {

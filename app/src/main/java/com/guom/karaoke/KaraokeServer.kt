@@ -171,11 +171,15 @@ class KaraokeServer(private val context: Context) {
                 val field = SearchField.parse(call.request.queryParameters["field"])
                 when (val r = withContext(Dispatchers.IO) { OnlineLookup.search(context, q) }) {
                     is OnlineLookup.Result.Found -> {
-                        val local = withContext(Dispatchers.IO) { db.search(q, Settings.enabledChannels(context), field) }
-                        val songs = (r.newSongs + local).distinctBy { it.videoId }
+                        // 유튜브 검색은 느슨하게 관련된 영상까지 돌려준다. 찾은 곡은 모두 DB 에 저장하되(정식 노래방 영상),
+                        // 화면엔 평소 검색과 같은 규칙으로 검색어가 실제로 들어간 곡만 보여준다.
+                        val songs = withContext(Dispatchers.IO) { db.search(q, Settings.enabledChannels(context), field) }
+                        val newIds = r.newSongs.map { it.videoId }.toSet()
                         call.respond(
                             OnlineSearchResponse(
-                                SongGrouping.group(songs, Settings.preferredBrand(context)), r.newSongs.size, r.remainingToday,
+                                SongGrouping.group(songs, Settings.preferredBrand(context)),
+                                songs.count { it.videoId in newIds },
+                                r.remainingToday,
                             )
                         )
                     }
