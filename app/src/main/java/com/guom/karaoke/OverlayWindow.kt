@@ -77,7 +77,8 @@ class OverlayWindow(private val context: Context, private val scope: CoroutineSc
                 setOnClickListener { openPanel() }
             })
         }
-        // 작은 창만 터치를 받는다 (창 밖은 유튜브로)
+        // 작은 창만 터치를 받는다 (창 밖은 유튜브로). 위치는 끌어서 옮기고 기억한다.
+        val metrics = context.resources.displayMetrics
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
@@ -85,10 +86,12 @@ class OverlayWindow(private val context: Context, private val scope: CoroutineSc
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
             PixelFormat.TRANSLUCENT,
         ).apply {
-            gravity = Gravity.TOP or Gravity.END
-            x = (8 * d).toInt()
-            y = (8 * d).toInt()
+            gravity = Gravity.TOP or Gravity.START
+            val saved = Settings.overlayPosition(context)
+            x = saved?.first ?: (metrics.widthPixels - (210 * d).toInt())
+            y = saved?.second ?: (8 * d).toInt()
         }
+        view.setOnTouchListener(DragToMove(params, view))
         runCatching { wm.addView(view, params) }.onFailure { return }
         root = view
         active = true
@@ -114,6 +117,44 @@ class OverlayWindow(private val context: Context, private val scope: CoroutineSc
                 }
                 delay(30_000)
             }
+        }
+    }
+
+    /** 작은 창 끌어서 옮기기: 조금 움직이면 무시(탭), 화면 밖으로는 못 나가게, 놓으면 위치 저장 */
+    private inner class DragToMove(
+        private val params: WindowManager.LayoutParams,
+        private val view: View,
+    ) : View.OnTouchListener {
+        private var downX = 0f
+        private var downY = 0f
+        private var startX = 0
+        private var startY = 0
+        private var dragging = false
+
+        override fun onTouch(v: View, e: android.view.MotionEvent): Boolean {
+            val slop = 8 * context.resources.displayMetrics.density
+            when (e.actionMasked) {
+                android.view.MotionEvent.ACTION_DOWN -> {
+                    downX = e.rawX; downY = e.rawY
+                    startX = params.x; startY = params.y
+                    dragging = false
+                }
+                android.view.MotionEvent.ACTION_MOVE -> {
+                    val dx = e.rawX - downX
+                    val dy = e.rawY - downY
+                    if (!dragging && (kotlin.math.abs(dx) > slop || kotlin.math.abs(dy) > slop)) dragging = true
+                    if (dragging) {
+                        val m = context.resources.displayMetrics
+                        params.x = (startX + dx.toInt()).coerceIn(0, maxOf(0, m.widthPixels - view.width))
+                        params.y = (startY + dy.toInt()).coerceIn(0, maxOf(0, m.heightPixels - view.height))
+                        runCatching { wm.updateViewLayout(view, params) }
+                    }
+                }
+                android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> {
+                    if (dragging) Settings.setOverlayPosition(context, params.x, params.y)
+                }
+            }
+            return true
         }
     }
 

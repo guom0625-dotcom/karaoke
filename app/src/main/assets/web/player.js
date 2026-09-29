@@ -274,11 +274,23 @@ async function panelSearch() {
   try {
     const groups = await hostApi('GET', `/api/search?q=${encodeURIComponent(q)}&field=${pField}`);
     if (seq !== pSeq) return;
+    // 로컬 결과가 없으면 잠시 뒤 자동으로 유튜브(TJ·금영 채널)에서 찾는다 (초성만·1글자 제외, 같은 검색어 한 번)
+    const key = `${q}|${pField}`;
+    if (!groups.length && q.replace(/\s/g, '').length >= 2 && !/^[ㄱ-ㅎ\s]+$/.test(q) && !pAutoTried.has(key)) {
+      $('pResults').replaceChildren(el('li', { className: 'muted', textContent: '곡 목록에 없어서 유튜브에서 찾는 중…' }));
+      setTimeout(() => {
+        if (seq !== pSeq) return;
+        pAutoTried.add(key);
+        panelOnlineSearch(true);
+      }, 700);
+      return;
+    }
     renderPanelResults(groups, true);
   } catch (e) {
     hostError(e);
   }
 }
+const pAutoTried = new Set();
 
 // 곡 DB 에 없는 곡: 유튜브(TJ·금영 채널)에서 찾아 DB 에 추가 — 하루 횟수 제한
 function panelExtras(showOnline) {
@@ -287,17 +299,22 @@ function panelExtras(showOnline) {
     el('button', { className: 'wide-row', textContent: '🔗 유튜브 링크로 추가', onclick: addByLink }));
 }
 
-async function panelOnlineSearch() {
+async function panelOnlineSearch(auto = false) {
   const q = $('pq').value.trim();
   if (!q) return notice('검색어를 먼저 입력하세요');
   const seq = ++pSeq;
-  notice('유튜브에서 찾는 중…');
+  if (auto !== true) notice('유튜브에서 찾는 중…');
   try {
     const r = await hostApi('POST', `/api/search/online?q=${encodeURIComponent(q)}&field=${pField}`);
     if (seq !== pSeq) return;
+    if (!r.groups.length) {
+      $('pResults').replaceChildren(el('li', { className: 'muted', textContent: '유튜브(TJ·금영 채널)에서도 못 찾았어요' }), panelExtras(false));
+      return;
+    }
     renderPanelResults(r.groups, false);
-    notice(r.added ? `새 곡 ${r.added}개를 찾았어요 (오늘 ${r.remainingToday}번 남음)` : `새로 찾은 곡이 없어요 (오늘 ${r.remainingToday}번 남음)`);
+    if (auto !== true || r.added) notice(r.added ? `유튜브에서 새 곡 ${r.added}개를 찾았어요 (오늘 ${r.remainingToday}번 남음)` : `새로 찾은 곡이 없어요 (오늘 ${r.remainingToday}번 남음)`);
   } catch (e) {
+    if (auto === true) renderPanelResults([], true);
     if (e.status === 429) notice('오늘 유튜브 검색 횟수를 다 썼어요');
     else if (e.status === 503) notice('API 키가 없어요 (설정에서 입력)');
     else if (e.status === 502) notice(`유튜브 검색 실패: ${e.text}`);

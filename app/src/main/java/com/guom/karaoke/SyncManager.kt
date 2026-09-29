@@ -239,6 +239,17 @@ object Settings {
     fun songListCheckedAt(context: Context): Long = prefs(context).getLong("song_list_checked_at", 0)
     fun setSongListCheckedAt(context: Context, t: Long) { prefs(context).edit().putLong("song_list_checked_at", t).apply() }
 
+    /** 오버레이 작은 창 위치 (끌어서 옮긴 곳). 저장된 적 없으면 null → 오른쪽 위 */
+    fun overlayPosition(context: Context): Pair<Int, Int>? {
+        val p = prefs(context)
+        if (!p.contains("overlay_x")) return null
+        return p.getInt("overlay_x", 0) to p.getInt("overlay_y", 0)
+    }
+
+    fun setOverlayPosition(context: Context, x: Int, y: Int) {
+        prefs(context).edit().putInt("overlay_x", x).putInt("overlay_y", y).apply()
+    }
+
     fun notificationAsked(context: Context): Boolean = prefs(context).getBoolean("notification_asked", false)
 
     fun setNotificationAsked(context: Context) {

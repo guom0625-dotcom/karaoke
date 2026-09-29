@@ -337,6 +337,11 @@ $('q').addEventListener('keydown', (ev) => {
   if (ev.key === 'Enter') { clearTimeout(searchTimer); search(); $('q').blur(); }
 });
 
+// 로컬 결과가 없으면 입력이 멈춘 뒤 자동으로 유튜브(TJ·금영 채널)에서 찾는다.
+// 초성만·1글자 검색은 유튜브가 못 알아들어서 제외, 같은 검색어는 한 번만.
+const autoTried = new Set();
+const canAutoOnline = (q) => q.replace(/\s/g, '').length >= 2 && !/^[ㄱ-ㅎ\s]+$/.test(q);
+
 async function search() {
   const q = $('q').value.trim();
   const seq = ++searchSeq;
@@ -344,6 +349,16 @@ async function search() {
   try {
     const groups = await api('GET', `/api/search?q=${encodeURIComponent(q)}&field=${searchField}`);
     if (seq !== searchSeq) return; // 더 최근 검색이 있음
+    const key = `${q}|${searchField}`;
+    if (!groups.length && canAutoOnline(q) && !autoTried.has(key)) {
+      $('results').replaceChildren(el('li', { className: 'muted', textContent: '곡 목록에 없어서 유튜브에서 찾는 중…' }));
+      setTimeout(() => {
+        if (seq !== searchSeq) return; // 그 사이 다시 입력함
+        autoTried.add(key);
+        onlineSearch(true);
+      }, 700);
+      return;
+    }
     renderResults(groups);
   } catch (e) {
     handleError(e);
@@ -355,21 +370,26 @@ function onlineButton() {
   return el('li', {}, el('button', {
     className: 'online',
     textContent: '🔎 찾는 곡이 없나요? 유튜브에서 더 찾기',
-    onclick: onlineSearch,
+    onclick: () => onlineSearch(false),
   }));
 }
 
-async function onlineSearch() {
+async function onlineSearch(auto = false) {
   const q = $('q').value.trim();
   if (!q) return;
   const seq = ++searchSeq;
-  toast('유튜브에서 찾는 중…');
+  if (!auto) toast('유튜브에서 찾는 중…');
   try {
     const r = await api('POST', `/api/search/online?q=${encodeURIComponent(q)}&field=${searchField}`);
     if (seq !== searchSeq) return;
+    if (!r.groups.length) {
+      $('results').replaceChildren(el('li', { className: 'muted', textContent: '유튜브(TJ·금영 채널)에서도 못 찾았어요. 곡명과 가수를 같이 넣어 보세요' }));
+      return;
+    }
     renderResults(r.groups, false);
-    toast(r.added ? `새 곡 ${r.added}개를 찾았어요 (오늘 ${r.remainingToday}번 남음)` : `새로 찾은 곡이 없어요 (오늘 ${r.remainingToday}번 남음)`);
+    if (!auto || r.added) toast(r.added ? `유튜브에서 새 곡 ${r.added}개를 찾았어요` : '새로 찾은 곡이 없어요');
   } catch (e) {
+    if (auto) { renderResults([], true); if (e.status !== 429 && e.status !== 503) return; }
     if (e.status === 429) toast('오늘 유튜브 검색 횟수를 다 썼어요');
     else if (e.status === 503) toast('호스트 앱에 API 키가 없어요');
     else if (e.status === 502) toast(`유튜브 검색 실패: ${e.text}`);
