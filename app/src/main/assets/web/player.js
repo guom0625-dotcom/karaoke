@@ -150,10 +150,24 @@ function render() {
   }));
 }
 
+// ---- 전체화면: 크롬 주소창·상태바·내비게이션 바를 숨긴다 (사용자 탭 안에서만 허용) ----
+function enterFullscreen() {
+  const el = document.documentElement;
+  if (document.fullscreenElement || !el.requestFullscreen) return;
+  el.requestFullscreen({ navigationUI: 'hide' }).catch(() => { /* 거부되면 창 크기 그대로 */ });
+}
+function updateFullscreenButton() {
+  $('fullscreen').classList.toggle('hidden', !started || !!document.fullscreenElement);
+}
+document.addEventListener('fullscreenchange', updateFullscreenButton);
+$('fullscreen').addEventListener('click', enterFullscreen);
+
 $('start').addEventListener('click', () => {
   started = true;
   $('start').classList.add('hidden');
+  enterFullscreen();
   sync();
+  setTimeout(updateFullscreenButton, 500);
 });
 
 $('skip').addEventListener('click', () => send({ type: 'skip' }));
