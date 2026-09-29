@@ -196,7 +196,7 @@ class KaraokeService : Service() {
         fun appModeReady(context: Context) = MediaListenerService.isEnabled(context) && OverlayWindow.canShow(context)
 
         private fun mainLabel(context: Context) =
-            if (Settings.playbackMode(context) == Settings.MODE_APP) "리모컨" else "플레이어"
+            if (Settings.playbackMode(context) == Settings.MODE_APP) "유튜브" else "플레이어"
 
         private val _serverRunning = MutableStateFlow(false)
         /** 로컬 서버 실행 여부 */

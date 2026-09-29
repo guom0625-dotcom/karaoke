@@ -85,9 +85,23 @@ object Nav {
         openInChrome(context, "http://127.0.0.1:${KaraokeServer.PORT}/guest?host=${Sessions.hostToken}", reuseTab = true)
     }
 
-    /** 알림의 "실행" 등: 재생 방식에 따라 크롬 플레이어 또는 호스트 리모컨을 연다 */
+    /**
+     * 알림의 "실행" 등: 유튜브 앱 방식이면 유튜브 앱을 앞으로 (예약은 오버레이의 🔍 예약),
+     * 크롬 플레이어 방식이면 크롬 플레이어를 연다.
+     */
     fun openMain(context: Context) {
-        if (Settings.playbackMode(context) == Settings.MODE_APP) openHostRemote(context) else openPlayer(context)
+        if (Settings.playbackMode(context) == Settings.MODE_APP) openYouTubeApp(context) else openPlayer(context)
+    }
+
+    /** 유튜브 앱을 앞으로 가져온다 (이미 떠 있으면 보던 화면 그대로). 없으면 호스트 리모컨 */
+    private fun openYouTubeApp(context: Context) {
+        val launch = context.packageManager.getLaunchIntentForPackage(YouTubeAppPlayer.YOUTUBE_PACKAGE)
+        if (launch == null) {
+            Toast.makeText(context, "유튜브 앱이 없어 리모컨을 열어요", Toast.LENGTH_SHORT).show()
+            openHostRemote(context)
+            return
+        }
+        context.startActivity(launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     }
 
     /** 현재 핫스팟(없으면 와이파이) 기준 동승자 주소 */

@@ -88,6 +88,10 @@ class SettingsActivity : Activity() {
                 KaraokeService.startServer(this)
                 Nav.openMain(this)
             },
+            ui.button("호스트 리모컨 열기 (크롬)") {
+                KaraokeService.startServer(this)
+                Nav.openHostRemote(this)
+            },
             ui.button("서버 종료") { confirmStop(quit = false) },
             ui.button("앱 완전 종료 (알림까지 끄기)", danger = true) { confirmStop(quit = true) },
         )
@@ -109,7 +113,7 @@ class SettingsActivity : Activity() {
         },
         ui.hint(
             "유튜브 앱: 차례가 된 곡을 유튜브 앱으로 열고, 끝나면 다음 곡을 열어요. 외부 재생 제한이 없어요. " +
-                "유튜브 앱 설정 → 재생 → 자동재생을 꺼 두세요. 실행을 누르면 호스트 리모컨(예약·관리)이 열려요.\n" +
+                "유튜브 앱 설정 → 재생 → 자동재생을 꺼 두세요. 실행을 누르면 유튜브 앱이 뜨고, 예약은 오른쪽 위 🔍 예약에서 해요.\n" +
                 "크롬 플레이어: 크롬 안에서 재생 (일부 곡은 외부 재생이 막혀 있음)"
         ),
     )
