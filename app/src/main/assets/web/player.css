@@ -109,3 +109,8 @@ html, body {
 .qr-msg { font-size: 2.2vh; color: #ddd; max-width: 40vw; padding: 1vh; }
 .join.big .qr-msg { font-size: 3vh; }
 .panel .wide-row { display: block; width: 100%; margin-top: .5em; padding: .6em; font-size: .85em; background: none; border: 1px dashed #555; color: #bbb; }
+
+/* 호스트 앱 오버레이가 떠 있을 때: 오버레이가 다음 곡·QR·🔍 예약을 맡는다 */
+body.overlay-mode .join,
+body.overlay-mode .upnext,
+body.overlay-mode .controls { display: none !important; }

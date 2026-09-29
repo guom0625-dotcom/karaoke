@@ -71,7 +71,7 @@ internal data class LinkRequest(val url: String)
 internal data class OnlineSearchResponse(val groups: List<SongGroup>, val added: Int, val remainingToday: Int)
 
 @Serializable
-internal data class JoinInfo(val guestUrl: String?)
+internal data class JoinInfo(val guestUrl: String?, val overlay: Boolean = false)
 
 @Serializable
 internal data class ProgressMessage(val type: String = "progress", val progress: Progress?)
@@ -327,7 +327,10 @@ class KaraokeServer(private val context: Context) {
     /** 현재 핫스팟 IP 기준 동승자 주소. IP 는 핫스팟을 켤 때마다 바뀔 수 있어 매번 계산한다. */
     private fun joinInfo(): JoinInfo {
         val ip = Network.candidates().firstOrNull()?.ip
-        return JoinInfo(guestUrl = ip?.let { "http://$it:$PORT/guest?room=${Sessions.roomToken}" })
+        return JoinInfo(
+            guestUrl = ip?.let { "http://$it:$PORT/guest?room=${Sessions.roomToken}" },
+            overlay = OverlayWindow.active,
+        )
     }
 
     private fun RoutingCall.isHostRequest() =

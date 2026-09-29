@@ -91,6 +91,7 @@ class OverlayWindow(private val context: Context, private val scope: CoroutineSc
         }
         runCatching { wm.addView(view, params) }.onFailure { return }
         root = view
+        active = true
 
         jobs += scope.launch {
             QueueManager.state.collect { s ->
@@ -176,10 +177,16 @@ class OverlayWindow(private val context: Context, private val scope: CoroutineSc
         jobs.clear()
         root?.let { runCatching { wm.removeView(it) } }
         root = null
+        active = false
         qrFor = null
     }
 
     companion object {
         fun canShow(context: Context) = SystemSettings.canDrawOverlays(context)
+
+        /** 오버레이 창이 떠 있는지 — 크롬 플레이어는 이때 페이지 안 QR·🔍 예약을 숨긴다 */
+        @Volatile
+        var active = false
+            private set
     }
 }

@@ -391,7 +391,15 @@ $('qrGuest').addEventListener('load', () => {
   if (joinError === 'QR 이미지를 불러오지 못했어요') { joinError = ''; renderJoin(); }
 });
 
+// 호스트 앱 오버레이(다음 곡·QR·🔍 예약)가 떠 있으면 페이지 안의 같은 요소는 숨긴다
+function applyOverlayMode() {
+  const on = !!(joinInfo && joinInfo.overlay);
+  document.body.classList.toggle('overlay-mode', on);
+  if (on && panelOpen) setPanel(false);
+}
+
 function renderJoin() {
+  applyOverlayMode();
   const ok = !joinError && joinInfo && joinInfo.guestUrl;
   $('qrBox').hidden = !ok;
   $('qrMsg').hidden = !!ok;

@@ -85,16 +85,15 @@ class KaraokeService : Service() {
 
     /** 재생 방식에 맞춰 유튜브 앱 제어기·오버레이를 켜거나 끈다 (예약 목록은 유지) */
     private fun applyMode() {
+        // 오버레이(다음 곡·QR·🔍 예약)는 두 재생 방식 모두에서 띄운다.
+        // 권한을 나중에 허용한 경우에도 다시 부르면 창이 뜬다 (show 는 중복 호출 안전)
+        (overlay ?: OverlayWindow(this, scope).also { overlay = it }).show()
         val app = Settings.playbackMode(this) == Settings.MODE_APP
         if (app) {
-            // 권한을 나중에 허용한 경우에도 다시 부르면 창이 뜬다 (show 는 중복 호출 안전)
-            (overlay ?: OverlayWindow(this, scope).also { overlay = it }).show()
             if (appPlayer == null) appPlayer = YouTubeAppPlayer(this, scope).also { it.start() }
         } else {
             appPlayer?.stop()
             appPlayer = null
-            overlay?.hide()
-            overlay = null
         }
         refreshNotification()
     }
