@@ -37,7 +37,7 @@ class SettingsActivity : Activity() {
             addView(brandCard())
             addView(serverCard())
             addView(errorCard())
-            addView(ui.hint("gomkaraoke v${packageManager.getPackageInfo(packageName, 0).versionName}"))
+            addView(ui.hint("gomKaraoke v${packageManager.getPackageInfo(packageName, 0).versionName}"))
         }
         setContentView(ScrollView(this).apply {
             setBackgroundColor(Color.parseColor("#f2f2f7"))
@@ -228,7 +228,7 @@ class SettingsActivity : Activity() {
                     .show()
             },
             autoStop,
-            ui.hint("빅스비 루틴: '모바일 핫스팟 켜짐 → 앱 열기: gomkaraoke'만 만들면 돼요. 끌 때는 자동이에요"),
+            ui.hint("빅스비 루틴: '모바일 핫스팟 켜짐 → 앱 열기: gomKaraoke'만 만들면 돼요. 끌 때는 자동이에요"),
             batteryText,
             ui.button("배터리 최적화 예외 설정") { requestBatteryExemption() },
             ui.hint("삼성 폰은 설정 → 배터리 → 백그라운드 사용 제한 → 절전 예외 앱에도 추가해 두세요"),
