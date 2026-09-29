@@ -13,18 +13,20 @@ import android.provider.Browser
 import android.widget.Toast
 
 /**
- * 앱 아이콘(빅스비 루틴 "앱 열기" 포함): 알림창에 gomKaraoke 알림(실행·종료·설정)을 띄운다.
- * 첫 설정(API 키·곡 DB·알림 권한)이 안 됐으면 설정 화면을 연다.
+ * 앱 아이콘(빅스비 루틴 "앱 열기" 포함) = 실행: 서버를 켜고 유튜브(또는 크롬 플레이어)를 연다.
+ * Tesor 차 화면엔 알림창이 없어서 알림 버튼 대신 아이콘으로 시작하고, 설정·종료는 오버레이 버튼으로 한다.
+ * 첫 설정(곡 DB·알림 권한)이 안 됐으면 설정 화면을 연다.
  * 런처 항목 이름(MainActivity)은 홈 화면 아이콘·루틴이 깨지지 않도록 유지한다.
  */
 class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        KaraokeService.showNotification(this)
         if (needsSetup()) {
+            KaraokeService.showNotification(this)
             startActivity(Intent(this, SettingsActivity::class.java))
         } else {
-            Toast.makeText(this, "알림창의 gomKaraoke에서 '실행'을 누르세요", Toast.LENGTH_SHORT).show()
+            KaraokeService.startServer(this)
+            Nav.openMain(this)
         }
         finish()
     }

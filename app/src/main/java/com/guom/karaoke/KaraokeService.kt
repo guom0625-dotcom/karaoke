@@ -170,7 +170,7 @@ class KaraokeService : Service() {
                     updateVersion != null -> "새 버전 v$updateVersion 있음 · 설정에서 업데이트"
                     serverOn && Settings.playbackMode(this) == Settings.MODE_APP && !appModeReady(this) ->
                         "유튜브 앱 재생에 필요한 권한이 없어요 · 설정에서 확인"
-                    serverOn -> "실행을 누르면 ${mainLabel(this)}를 다시 열어요"
+                    serverOn -> "차 화면에선 오버레이의 ⚙·⏻ 버튼 · 실행을 누르면 ${mainLabel(this)}를 다시 열어요"
                     else -> "실행을 누르면 서버를 켜고 ${mainLabel(this)}를 열어요"
                 }
             )

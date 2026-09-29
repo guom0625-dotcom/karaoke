@@ -84,6 +84,20 @@ class OverlayWindow(private val base: Context, private val scope: CoroutineScope
                 ).apply { topMargin = (6 * d).toInt() }
                 setOnClickListener { openPanel() }
             })
+            // Tesor 차 화면엔 알림창이 없어 설정·종료를 여기 둔다
+            addView(LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, (32 * d).toInt()
+                ).apply { topMargin = (4 * d).toInt() }
+                addView(smallButton("⚙ 설정", d) {
+                    Displays.startActivity(base, android.content.Intent(base, SettingsActivity::class.java))
+                })
+                addView(android.widget.Space(context).apply {
+                    layoutParams = LinearLayout.LayoutParams((4 * d).toInt(), 1)
+                })
+                addView(smallButton("⏻ 종료", d) { onStopPressed(this) })
+            })
         }
         // 작은 창만 터치를 받는다 (창 밖은 유튜브로). 위치는 끌어서 옮기고 기억한다.
         val metrics = context.resources.displayMetrics
@@ -126,6 +140,34 @@ class OverlayWindow(private val base: Context, private val scope: CoroutineScope
                 delay(30_000)
             }
         }
+    }
+
+    private fun smallButton(label: String, d: Float, onClick: Button.() -> Unit) = Button(context).apply {
+        text = label
+        textSize = 11f
+        isAllCaps = false
+        setTextColor(Color.WHITE)
+        setPadding(0, 0, 0, 0)
+        background = GradientDrawable().apply {
+            setColor(Color.argb(200, 60, 64, 76))
+            cornerRadius = 8 * d
+        }
+        layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f)
+        setOnClickListener { onClick() }
+    }
+
+    /** 실수 방지: 3초 안에 두 번 눌러야 서버 종료 */
+    private var stopArmedAt = 0L
+
+    private fun onStopPressed(button: Button) {
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (now - stopArmedAt < 3000) {
+            KaraokeService.stopServer(base)
+            return
+        }
+        stopArmedAt = now
+        button.text = "한 번 더"
+        button.postDelayed({ button.text = "⏻ 종료" }, 3000)
     }
 
     /** 작은 창 끌어서 옮기기: 조금 움직이면 무시(탭), 화면 밖으로는 못 나가게, 놓으면 위치 저장 */
