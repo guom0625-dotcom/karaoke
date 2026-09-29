@@ -42,6 +42,7 @@ class SettingsActivity : Activity() {
         val page = ui.page().apply {
             addView(statusCard())
             addView(playbackCard())
+            addView(displayCard())
             addView(updateCard())
             addView(songDbCard())
             addView(brandCard())
@@ -59,6 +60,7 @@ class SettingsActivity : Activity() {
         super.onResume()
         refreshBattery()
         refreshPlayback()
+        refreshDisplays()
         addressView.text = Nav.guestAddress(this)
         // 권한을 막 허용하고 돌아온 경우 등: 서버가 켜져 있으면 재생 방식 설정을 다시 반영
         KaraokeService.applyMode(this)
@@ -113,6 +115,31 @@ class SettingsActivity : Activity() {
                 "크롬 플레이어: 크롬 안에서 재생 (일부 곡은 외부 재생이 막혀 있음)"
         ),
     )
+
+    // ---- 표시 화면 (Tesor 차 화면이 별도 디스플레이인 경우) ----
+    private val displayList by lazy { ui.text(size = 13f) }
+    private val displayButton by lazy { ui.button("") { cycleDisplay() } }
+
+    private fun displayCard(): LinearLayout = ui.card(
+        ui.title("표시 화면"),
+        displayButton,
+        displayList,
+        ui.hint("차 화면(Tesor)이 별도 화면으로 잡히면 자동으로 그쪽에 오버레이와 유튜브·크롬을 띄워요. ▶ 표시가 지금 쓰는 화면이에요. 틀리면 눌러서 직접 고르세요"),
+    )
+
+    private fun cycleDisplay() {
+        val ids = listOf(Displays.AUTO) + Displays.all(this).map { it.displayId }
+        val next = ids[(ids.indexOf(Settings.displayId(this)).coerceAtLeast(0) + 1) % ids.size]
+        Settings.setDisplayId(this, next)
+        KaraokeService.applyMode(this) // 서버가 켜져 있으면 오버레이를 바로 옮긴다
+        refreshDisplays()
+    }
+
+    private fun refreshDisplays() {
+        val id = Settings.displayId(this)
+        displayButton.text = "표시 화면: " + (if (id == Displays.AUTO) "자동" else "#$id") + " (눌러서 변경)"
+        displayList.text = Displays.describe(this)
+    }
 
     private fun toggleMode() {
         val next = if (Settings.playbackMode(this) == Settings.MODE_APP) Settings.MODE_CHROME else Settings.MODE_APP

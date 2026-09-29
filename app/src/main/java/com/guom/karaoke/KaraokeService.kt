@@ -75,8 +75,16 @@ class KaraokeService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    /** Tesor 연결·해제 등으로 디스플레이가 생기거나 없어지면 오버레이를 알맞은 화면으로 옮긴다 */
+    private val displayListener = object : android.hardware.display.DisplayManager.DisplayListener {
+        override fun onDisplayAdded(displayId: Int) { overlay?.moveIfNeeded() }
+        override fun onDisplayRemoved(displayId: Int) { overlay?.moveIfNeeded() }
+        override fun onDisplayChanged(displayId: Int) { overlay?.moveIfNeeded() }
+    }
+
     private fun startServer() {
         if (server != null) return
+        Displays.changes(this, displayListener)
         server = KaraokeServer(applicationContext).also { it.start() }
         _serverRunning.value = true
         hotspotJob = scope.launch { watchHotspot() }
@@ -87,7 +95,10 @@ class KaraokeService : Service() {
     private fun applyMode() {
         // 오버레이(다음 곡·QR·🔍 예약)는 두 재생 방식 모두에서 띄운다.
         // 권한을 나중에 허용한 경우에도 다시 부르면 창이 뜬다 (show 는 중복 호출 안전)
-        (overlay ?: OverlayWindow(this, scope).also { overlay = it }).show()
+        (overlay ?: OverlayWindow(this, scope).also { overlay = it }).apply {
+            show()
+            moveIfNeeded() // 표시 화면 설정이 바뀐 경우
+        }
         val app = Settings.playbackMode(this) == Settings.MODE_APP
         if (app) {
             if (appPlayer == null) appPlayer = YouTubeAppPlayer(this, scope).also { it.start() }
@@ -105,6 +116,7 @@ class KaraokeService : Service() {
 
     /** 서버만 끈다: 예약·재생 상태를 비운다. 동기화는 서버와 별개라 계속 진행된다. */
     private fun stopServer() {
+        if (server != null) Displays.removeListener(this, displayListener)
         hotspotJob?.cancel()
         hotspotJob = null
         appPlayer?.stop()

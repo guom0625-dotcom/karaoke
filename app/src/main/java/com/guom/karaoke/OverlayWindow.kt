@@ -27,8 +27,13 @@ import kotlinx.coroutines.launch
  * (WebView 에는 우리 리모컨 페이지만 띄운다. 유튜브 영상은 유튜브 앱이 재생)
  * Android 15+ 에서는 이 창이 떠 있어야 백그라운드에서 유튜브 앱을 열 수 있다.
  */
-class OverlayWindow(private val context: Context, private val scope: CoroutineScope) {
-    private val wm = context.getSystemService(WindowManager::class.java)
+class OverlayWindow(private val base: Context, private val scope: CoroutineScope) {
+    /** 목표 디스플레이(Tesor 차 화면 등) 기준 컨텍스트 — show() 때마다 다시 고른다 */
+    private var context: Context = base
+    private var wm: WindowManager = base.getSystemService(WindowManager::class.java)
+    /** 지금 창이 붙어 있는 디스플레이 */
+    var displayId: Int = -1
+        private set
     private var root: LinearLayout? = null
     private var panel: LinearLayout? = null
     private var webView: WebView? = null
@@ -36,7 +41,10 @@ class OverlayWindow(private val context: Context, private val scope: CoroutineSc
     private var qrFor: String? = null
 
     fun show() {
-        if (root != null || !canShow(context)) return
+        if (root != null || !canShow(base)) return
+        context = Displays.overlayContext(base)
+        wm = context.getSystemService(WindowManager::class.java)
+        displayId = Displays.targetId(base)
         val d = context.resources.displayMetrics.density
         val next = TextView(context).apply {
             setTextColor(Color.WHITE)
@@ -212,6 +220,14 @@ class OverlayWindow(private val context: Context, private val scope: CoroutineSc
         root?.visibility = View.VISIBLE
     }
 
+    /** 표시할 디스플레이가 바뀌었으면 그 화면으로 옮긴다 */
+    fun moveIfNeeded() {
+        if (root != null && displayId != Displays.targetId(base)) {
+            hide()
+            show()
+        }
+    }
+
     fun hide() {
         closePanel()
         jobs.forEach { it.cancel() }
@@ -219,6 +235,7 @@ class OverlayWindow(private val context: Context, private val scope: CoroutineSc
         root?.let { runCatching { wm.removeView(it) } }
         root = null
         active = false
+        displayId = -1
         qrFor = null
     }
 

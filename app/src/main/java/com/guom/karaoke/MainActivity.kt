@@ -66,9 +66,9 @@ object Nav {
         if (reuseTab) intent.putExtra(Browser.EXTRA_APPLICATION_ID, context.packageName)
         else intent.putExtra(Browser.EXTRA_CREATE_NEW_TAB, true)
         try {
-            context.startActivity(Intent(intent).setPackage("com.android.chrome"))
+            Displays.startActivity(context, Intent(intent).setPackage("com.android.chrome"))
         } catch (e: ActivityNotFoundException) {
-            context.startActivity(intent)
+            Displays.startActivity(context, intent)
         }
     }
 
@@ -109,7 +109,7 @@ object Nav {
             openHostRemote(context)
             return
         }
-        context.startActivity(launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        Displays.startActivity(context, launch)
     }
 
     /** 현재 핫스팟(없으면 와이파이) 기준 동승자 주소 */

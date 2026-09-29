@@ -250,6 +250,13 @@ object Settings {
         prefs(context).edit().putInt("overlay_x", x).putInt("overlay_y", y).apply()
     }
 
+    /** 오버레이·유튜브·크롬을 띄울 디스플레이 (Displays.AUTO = 자동) */
+    fun displayId(context: Context): Int = prefs(context).getInt("display_id", Displays.AUTO)
+
+    fun setDisplayId(context: Context, id: Int) {
+        prefs(context).edit().putInt("display_id", id).apply()
+    }
+
     fun notificationAsked(context: Context): Boolean = prefs(context).getBoolean("notification_asked", false)
 
     fun setNotificationAsked(context: Context) {

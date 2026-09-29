@@ -89,7 +89,7 @@ class YouTubeAppPlayer(private val context: Context, private val scope: Coroutin
             .setPackage(YOUTUBE_PACKAGE)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         try {
-            context.startActivity(intent)
+            Displays.startActivity(context, intent) // 차 화면(Tesor 가상 디스플레이)이 있으면 그쪽에서
         } catch (e: Exception) {
             PlaybackLog.add("유튜브 앱을 열 수 없어요: ${e.message}", item.videoId)
         }
