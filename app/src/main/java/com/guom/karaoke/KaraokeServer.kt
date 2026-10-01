@@ -62,6 +62,7 @@ internal data class StateMessage(
     val type: String = "state",
     val nowPlaying: QueueItem?,
     val queue: List<QueueItem>,
+    val rotate: Boolean,
 )
 
 @Serializable
@@ -90,6 +91,7 @@ class KaraokeServer(private val context: Context) {
     fun start() {
         if (server != null) return
         Sessions.init(context)
+        QueueManager.setRotate(Settings.rotateMode(context))
         server = embeddedServer(CIO, port = PORT, host = "0.0.0.0") { module() }.start(wait = false)
     }
 
@@ -137,6 +139,7 @@ class KaraokeServer(private val context: Context) {
                 val nickname = Sessions.cleanNickname(call.receive<NicknameRequest>().nickname)
                     ?: return@post call.respond(HttpStatusCode.BadRequest, "nickname")
                 val s = Sessions.create(nickname)
+                QueueManager.register(s.publicId) // 돌아가며 부르기 차례 = 접속(등록) 순
                 call.respond(SessionResponse(s.secret, s.publicId, s.nickname))
             }
             get("/api/me") {
@@ -224,6 +227,15 @@ class KaraokeServer(private val context: Context) {
                 call.respondOutcome(QueueManager.move(id, delta, actor))
             }
 
+            // 돌아가며 부르기 켜기/끄기 (호스트만, 설정에 저장)
+            post("/api/rotate") {
+                if (call.actor() != Actor.Host) return@post call.respond(HttpStatusCode.Forbidden)
+                val on = call.request.queryParameters["on"] == "1"
+                Settings.setRotateMode(context, on)
+                QueueManager.setRotate(on)
+                call.respond(HttpStatusCode.NoContent)
+            }
+
             // ---- 재생 제어: 재생 중인 곡의 예약자 본인 + 호스트 ----
             post("/api/player/{action}") {
                 val actor = call.actor() ?: return@post call.respond(HttpStatusCode.Unauthorized)
@@ -244,7 +256,7 @@ class KaraokeServer(private val context: Context) {
                 val jobs = listOf(
                     launch {
                         QueueManager.state.collect { s ->
-                            send(Frame.Text(AppJson.encodeToString(StateMessage.serializer(), StateMessage(nowPlaying = s.nowPlaying, queue = s.queue))))
+                            send(Frame.Text(AppJson.encodeToString(StateMessage.serializer(), StateMessage(nowPlaying = s.nowPlaying, queue = s.queue, rotate = s.rotate))))
                         }
                     },
                     launch {

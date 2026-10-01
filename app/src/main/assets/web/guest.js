@@ -263,7 +263,23 @@ function renderQueue() {
   else if (np && isMine(np)) summary = '· 지금 내 차례!';
   else if (myIdx >= 0) summary = `· 내 예약 ${myCount}곡, 다음 차례 약 ${Math.max(1, Math.round(waitSeconds(myIdx) / 60))}분 후`;
   $('mySummary').textContent = summary;
+
+  const rotate = !!state.rotate;
+  $('rotate').hidden = !hostMode && !rotate;
+  $('rotate').disabled = !hostMode;
+  $('rotate').classList.toggle('on', rotate);
+  $('rotate').textContent = hostMode
+    ? `🔄 돌아가며 부르기: ${rotate ? '켬 (한 사람씩 번갈아)' : '끔 (예약한 순서대로)'}`
+    : '🔄 돌아가며 부르기 — 한 사람씩 번갈아 불러요';
 }
+
+$('rotate').addEventListener('click', async () => {
+  try {
+    await api('POST', `/api/rotate?on=${state.rotate ? 0 : 1}`);
+  } catch (e) {
+    handleError(e);
+  }
+});
 
 // 진행 바는 로컬에서 부드럽게 움직이고, 대기 시간은 가끔 갱신
 setInterval(updateBar, 250);

@@ -6,6 +6,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.serialization.Serializable
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicLong
 
 @Serializable
@@ -30,6 +31,8 @@ data class QueueItem(
 data class PlayerState(
     val nowPlaying: QueueItem? = null,
     val queue: List<QueueItem> = emptyList(),
+    /** 돌아가며 부르기: 대기곡을 사람별로 한 곡씩 번갈아 놓는다 (호스트가 켜고 끔) */
+    val rotate: Boolean = false,
 )
 
 /** 플레이어 페이지가 보고하는 재생 위치 (초) */
@@ -46,10 +49,15 @@ const val HOST_OWNER_ID = "host"
 
 /**
  * 예약 큐 (메모리). 재생 순서는 예약한 시간 순.
+ * 돌아가며 부르기(rotate)를 켜면 대기곡을 사람별로 한 곡씩 번갈아 놓는다:
+ * 지금 부르는 사람 다음 사람부터 등록 순으로 돌고, 대기곡이 없는 사람은 건너뛴다.
  * 권한: 대기곡 취소·재생 중인 곡 제어(스킵·일시정지·이동)는 예약자 본인 + 호스트, 순서 변경은 호스트만.
  */
 open class KaraokeQueue(private val clock: () -> Long = System::currentTimeMillis) {
     private val nextId = AtomicLong(1)
+
+    /** 사람(ownerId) 등록 순서 — 돌아가며 부르기의 차례 */
+    private val owners = CopyOnWriteArrayList<String>()
 
     private val _state = MutableStateFlow(PlayerState())
     val state = _state.asStateFlow()
@@ -69,10 +77,21 @@ open class KaraokeQueue(private val clock: () -> Long = System::currentTimeMilli
             nextId.getAndIncrement(), song.videoId, song.title, song.artist, song.brand,
             song.karaokeNo, song.variant, song.durationSec, ownerId, nickname, clock(),
         )
+        register(ownerId)
         _state.update { s ->
-            if (s.nowPlaying == null) s.copy(nowPlaying = item) else s.copy(queue = s.queue + item)
+            if (s.nowPlaying == null) s.copy(nowPlaying = item) else arranged(s.copy(queue = s.queue + item))
         }
         return item
+    }
+
+    /** 돌아가며 부르기 차례에 넣는다 (동승자는 접속할 때, 호스트는 첫 예약 때). 이미 있으면 그대로. */
+    fun register(ownerId: String) {
+        owners.addIfAbsent(ownerId)
+    }
+
+    /** 돌아가며 부르기 켜기/끄기. 켜면 지금 대기곡을 바로 섞고, 꺼도 지금 순서는 그대로 둔다. */
+    fun setRotate(on: Boolean) {
+        _state.update { arranged(it.copy(rotate = on)) }
     }
 
     fun cancel(itemId: Long, by: Actor): Outcome {
@@ -84,12 +103,15 @@ open class KaraokeQueue(private val clock: () -> Long = System::currentTimeMilli
                 !owns(by, item) -> Outcome.FORBIDDEN
                 else -> Outcome.OK
             }
-            if (outcome == Outcome.OK) s.copy(queue = s.queue.filterNot { it.id == itemId }) else s
+            if (outcome == Outcome.OK) arranged(s.copy(queue = s.queue.filterNot { it.id == itemId })) else s
         }
         return outcome
     }
 
-    /** 순서 변경 (호스트만). delta 가 음수면 앞으로. */
+    /**
+     * 순서 변경 (호스트만). delta 가 음수면 앞으로.
+     * 돌아가며 부르기 중엔 사람 차례는 고정이라, 같은 사람의 곡끼리만 자리를 바꾼다.
+     */
     fun move(itemId: Long, delta: Int, by: Actor): Outcome {
         if (by != Actor.Host) return Outcome.FORBIDDEN
         var outcome = Outcome.NOT_FOUND
@@ -100,8 +122,20 @@ open class KaraokeQueue(private val clock: () -> Long = System::currentTimeMilli
                 return@update s
             }
             outcome = Outcome.OK
-            val to = (from + delta).coerceIn(0, s.queue.lastIndex)
             val list = s.queue.toMutableList()
+            if (s.rotate) {
+                val step = if (delta < 0) -1 else 1
+                var at = from
+                repeat(kotlin.math.abs(delta).coerceAtMost(list.size)) {
+                    var j = at + step
+                    while (j in list.indices && list[j].ownerId != list[at].ownerId) j += step
+                    if (j !in list.indices) return@repeat
+                    list[at] = list[j].also { list[j] = list[at] }
+                    at = j
+                }
+                return@update s.copy(queue = list)
+            }
+            val to = (from + delta).coerceIn(0, s.queue.lastIndex)
             list.add(to, list.removeAt(from))
             s.copy(queue = list)
         }
@@ -183,9 +217,9 @@ open class KaraokeQueue(private val clock: () -> Long = System::currentTimeMilli
         if (_state.value.nowPlaying?.id == p.itemId) _progress.value = p
     }
 
-    /** 서버 종료 시 예약·재생 상태를 비운다 */
+    /** 서버 종료 시 예약·재생 상태를 비운다 (돌아가며 부르기 설정과 등록 순서는 유지) */
     fun clear() {
-        _state.value = PlayerState()
+        _state.update { PlayerState(rotate = it.rotate) }
         _progress.value = null
     }
 
@@ -202,7 +236,26 @@ open class KaraokeQueue(private val clock: () -> Long = System::currentTimeMilli
     }
 
     private fun advance(s: PlayerState) =
-        PlayerState(nowPlaying = s.queue.firstOrNull(), queue = s.queue.drop(1))
+        arranged(s.copy(nowPlaying = s.queue.firstOrNull(), queue = s.queue.drop(1)))
+
+    /**
+     * 돌아가며 부르기: 지금 부르는 사람 다음 사람부터 등록 순으로 한 곡씩 꺼내 놓는다.
+     * 한 사람의 곡끼리는 기존 순서 유지. 꺼져 있으면 그대로.
+     */
+    private fun arranged(s: PlayerState): PlayerState {
+        if (!s.rotate || s.queue.size < 2) return s
+        val byOwner = LinkedHashMap<String, ArrayDeque<QueueItem>>()
+        owners.forEach { byOwner[it] = ArrayDeque() }
+        s.queue.forEach { byOwner.getOrPut(it.ownerId) { ArrayDeque() }.add(it) }
+        val ring = byOwner.keys.toList()
+        var i = (ring.indexOf(s.nowPlaying?.ownerId) + 1) % ring.size
+        val out = ArrayList<QueueItem>(s.queue.size)
+        while (out.size < s.queue.size) {
+            byOwner.getValue(ring[i]).removeFirstOrNull()?.let { out.add(it) }
+            i = (i + 1) % ring.size
+        }
+        return s.copy(queue = out)
+    }
 }
 
 /** 앱 전체가 공유하는 큐 (서버·호스트 화면) */

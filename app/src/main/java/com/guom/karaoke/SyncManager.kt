@@ -220,6 +220,13 @@ object Settings {
         return true
     }
 
+    /** 돌아가며 부르기: 동승자가 여럿이면 예약을 사람별로 한 곡씩 번갈아 재생 (호스트 리모컨에서 켜고 끔) */
+    fun rotateMode(context: Context): Boolean = prefs(context).getBoolean("rotate_mode", false)
+
+    fun setRotateMode(context: Context, on: Boolean) {
+        prefs(context).edit().putBoolean("rotate_mode", on).apply()
+    }
+
     const val MODE_APP = "app"
     const val MODE_CHROME = "chrome"
 

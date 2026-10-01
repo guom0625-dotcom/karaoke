@@ -87,6 +87,59 @@ class KaraokeQueueTest {
         assertEquals(listOf(x.id, z.id, y.id), q.state.value.queue.map { it.id })
     }
 
+    private val carol = Actor.Guest("c", "캐럴")
+
+    private fun KaraokeQueue.owners() = state.value.queue.map { it.ownerId }
+
+    @Test
+    fun rotateInterleavesByRegistrationOrder() {
+        val q = KaraokeQueue()
+        listOf("a", "b", "c").forEach { q.register(it) }
+        q.setRotate(true)
+        // 앨리스 혼자면 연속으로
+        repeat(4) { q.add(song("a$it"), alice) }
+        assertEquals("a", q.state.value.nowPlaying?.ownerId)
+        assertEquals(listOf("a", "a", "a"), q.owners())
+
+        // 캐럴이 먼저 예약해도 차례는 등록 순 (앨리스가 부르는 중 → 밥 → 캐럴 → 앨리스)
+        q.add(song("c0"), carol)
+        assertEquals(listOf("c", "a", "a", "a"), q.owners())
+        q.add(song("b0"), bob)
+        q.add(song("b1"), bob)
+        assertEquals(listOf("b", "c", "a", "b", "a", "a"), q.owners())
+
+        // 넘어가도 차례가 이어진다
+        q.finish(q.state.value.nowPlaying!!.id)
+        assertEquals("b", q.state.value.nowPlaying?.ownerId)
+        assertEquals(listOf("c", "a", "b", "a", "a"), q.owners())
+    }
+
+    @Test
+    fun rotateToggleAndCancel() {
+        val q = KaraokeQueue()
+        q.add(song("1"), alice)
+        val a2 = q.add(song("2"), alice)
+        val a3 = q.add(song("3"), alice)
+        val b1 = q.add(song("4"), bob)
+        assertEquals(listOf(a2.id, a3.id, b1.id), q.state.value.queue.map { it.id }) // 꺼짐: 예약 순
+
+        q.setRotate(true) // 켜면 바로 섞는다
+        assertEquals(listOf(b1.id, a2.id, a3.id), q.state.value.queue.map { it.id })
+        assertTrue(q.state.value.rotate)
+
+        // 같은 사람 곡끼리만 자리 바꿈
+        assertEquals(Outcome.OK, q.move(a3.id, -1, Actor.Host))
+        assertEquals(listOf(b1.id, a3.id, a2.id), q.state.value.queue.map { it.id })
+        assertEquals(Outcome.OK, q.move(b1.id, 1, Actor.Host))
+        assertEquals(listOf(b1.id, a3.id, a2.id), q.state.value.queue.map { it.id })
+
+        assertEquals(Outcome.OK, q.cancel(b1.id, bob))
+        assertEquals(listOf(a3.id, a2.id), q.state.value.queue.map { it.id })
+
+        q.clear()
+        assertTrue(q.state.value.rotate) // 서버를 껐다 켜도 유지
+    }
+
     @Test
     fun progressOnlyForCurrentSongAndClearedOnAdvance() {
         val q = KaraokeQueue()
